@@ -5,103 +5,26 @@ from discord.ext import commands
 
 from services.db import Database
 from services.permissions import is_admin_member, is_finance, is_jobs_admin
+from services.tiers import (
+    JOB_TIERS,
+    LEVEL_ROLE_MAP,
+    expected_tier_role_id_for_level,
+    required_min_level_for_tier,
+    tier_display_for_level,
+)
 
 ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 
 REP_PER_JOB_PAYOUT = int(os.getenv("REP_PER_JOB_PAYOUT", "10") or "10")
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
 
-# Format: "0:🟩:Open,5:🟦:Contractor,10:🟪:Specialist,20:🟥:Elite"
-JOB_TIERS_RAW = os.getenv("JOB_TIERS", "0:🟩:Open,5:🟦:Contractor,10:🟪:Specialist,20:🟥:Elite") or ""
-
-# Role map: "5:ROLEID,10:ROLEID,20:ROLEID"
-LEVEL_ROLE_MAP_RAW = os.getenv("LEVEL_ROLE_MAP", "") or ""
-
-
-def _parse_job_tiers(raw: str) -> list[dict]:
-    tiers: list[dict] = []
-    raw = (raw or "").strip()
-    if not raw:
-        return [{"level": 0, "emoji": "🟩", "name": "Open"}]
-
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    for p in parts:
-        bits = p.split(":", 2)
-        if len(bits) != 3:
-            continue
-        level_s, emoji_s, name_s = bits
-        level_s = level_s.strip()
-        emoji_s = (emoji_s or "").strip()
-        name_s = (name_s or "").strip()
-        if not level_s.isdigit():
-            continue
-        tiers.append(
-            {
-                "level": int(level_s),
-                "emoji": emoji_s if emoji_s else "🟦",
-                "name": name_s if name_s else f"Level {level_s}+",
-            }
-        )
-
-    if not any(t["level"] == 0 for t in tiers):
-        tiers.insert(0, {"level": 0, "emoji": "🟩", "name": "Open"})
-
-    tiers.sort(key=lambda t: int(t["level"]))
-    return tiers
-
-
-JOB_TIERS = _parse_job_tiers(JOB_TIERS_RAW)
-
-
-def _tier_for_level(level: int) -> dict:
-    pick = JOB_TIERS[0]
-    for t in JOB_TIERS:
-        if int(level) >= int(t["level"]):
-            pick = t
-        else:
-            break
-    return pick
-
 
 def _tier_display_for_level(level: int) -> str:
-    t = _tier_for_level(int(level))
-    lvl_req = int(t["level"])
-    if lvl_req <= 0:
-        return f"{t['emoji']} {t['name']} (No requirement)"
-    return f"{t['emoji']} {t['name']} (Level {lvl_req}+)"
-
-
-def _parse_level_role_map(raw: str) -> dict[int, int]:
-    out: dict[int, int] = {}
-    raw = (raw or "").strip()
-    if not raw:
-        return out
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    for p in parts:
-        if ":" not in p:
-            continue
-        a, b = p.split(":", 1)
-        a = a.strip()
-        b = b.strip()
-        if not a.isdigit() or not b.isdigit():
-            continue
-        out[int(a)] = int(b)
-    return dict(sorted(out.items(), key=lambda kv: kv[0]))
-
-
-LEVEL_ROLE_MAP = _parse_level_role_map(LEVEL_ROLE_MAP_RAW)
+    return tier_display_for_level(int(level))
 
 
 def _expected_tier_role_id(level: int) -> int | None:
-    if not LEVEL_ROLE_MAP:
-        return None
-    expected: int | None = None
-    for lvl_req, rid in LEVEL_ROLE_MAP.items():
-        if int(level) >= int(lvl_req):
-            expected = int(rid)
-        else:
-            break
-    return expected
+    return expected_tier_role_id_for_level(int(level))
 
 
 def jobs_poster_or_admin():
@@ -183,15 +106,7 @@ def _extract_min_level_from_embed(embed: discord.Embed) -> int:
 
 
 def _tier_display(min_level: int) -> str:
-    # Try exact tier
-    for t in JOB_TIERS:
-        if int(t["level"]) == int(min_level):
-            if int(t["level"]) <= 0:
-                return f"{t['emoji']} {t['name']} (No requirement)"
-            return f"{t['emoji']} {t['name']} (Level {int(t['level'])}+)"
-    if min_level <= 0:
-        return "🟩 Open (No requirement)"
-    return f"⭐ Level {min_level}+"
+    return required_min_level_for_tier(int(min_level))
 
 
 def _job_embed(

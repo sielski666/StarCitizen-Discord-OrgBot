@@ -93,6 +93,21 @@ def tier_display_for_level(level: int) -> str:
     return f"{chosen['emoji']} {chosen['name']} (Level {req}+)"
 
 
+def expected_tier_role_id_for_level(level: int) -> int | None:
+    """
+    Returns the expected role id for a member level using LEVEL_ROLE_MAP
+    (highest threshold <= level). Returns None when no tier role applies.
+    """
+    level = int(level)
+    expected = None
+    for req_level, role_id in LEVEL_ROLE_MAP.items():
+        if int(req_level) <= level:
+            expected = int(role_id)
+        else:
+            break
+    return expected
+
+
 def required_min_level_for_tier(min_level: int) -> str:
     """
     For job embeds: show tier label that corresponds exactly to min_level.
