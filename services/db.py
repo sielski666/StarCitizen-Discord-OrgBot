@@ -95,6 +95,18 @@ class Database:
             await self.conn.close()
             self.conn = None
 
+    async def _begin(self):
+        await self.conn.execute("BEGIN IMMEDIATE")
+
+    async def _commit(self):
+        await self.conn.commit()
+
+    async def _rollback(self):
+        try:
+            await self.conn.rollback()
+        except Exception:
+            pass
+
     async def ensure_member(self, discord_id: int):
         await self.conn.execute(
             "INSERT OR IGNORE INTO wallets(discord_id, balance) VALUES(?, 0)",
@@ -125,16 +137,20 @@ class Database:
 
     async def add_balance(self, discord_id: int, amount: int, tx_type: str, reference: str | None = None):
         await self.ensure_member(discord_id)
-        await self.conn.execute("BEGIN IMMEDIATE")
-        await self.conn.execute(
-            "UPDATE wallets SET balance = balance + ? WHERE discord_id=?",
-            (int(amount), int(discord_id)),
-        )
-        await self.conn.execute(
-            "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
-            (int(discord_id), str(tx_type), int(amount), 0, 0, reference),
-        )
-        await self.conn.commit()
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE wallets SET balance = balance + ? WHERE discord_id=?",
+                (int(amount), int(discord_id)),
+            )
+            await self.conn.execute(
+                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
+                (int(discord_id), str(tx_type), int(amount), 0, 0, reference),
+            )
+            await self._commit()
+        except Exception:
+            await self._rollback()
+            raise
 
     async def get_shares(self, discord_id: int) -> int:
         await self.ensure_member(discord_id)
@@ -158,20 +174,24 @@ class Database:
         bal = await self.get_balance(discord_id)
         if bal < int(cost):
             raise ValueError("Not enough Org Credits to buy shares.")
-        await self.conn.execute("BEGIN IMMEDIATE")
-        await self.conn.execute(
-            "UPDATE wallets SET balance = balance - ? WHERE discord_id=?",
-            (int(cost), int(discord_id)),
-        )
-        await self.conn.execute(
-            "UPDATE shareholdings SET shares = shares + ? WHERE discord_id=?",
-            (int(shares_delta), int(discord_id)),
-        )
-        await self.conn.execute(
-            "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
-            (int(discord_id), "buy_shares", -int(cost), int(shares_delta), 0, reference),
-        )
-        await self.conn.commit()
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE wallets SET balance = balance - ? WHERE discord_id=?",
+                (int(cost), int(discord_id)),
+            )
+            await self.conn.execute(
+                "UPDATE shareholdings SET shares = shares + ? WHERE discord_id=?",
+                (int(shares_delta), int(discord_id)),
+            )
+            await self.conn.execute(
+                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
+                (int(discord_id), "buy_shares", -int(cost), int(shares_delta), 0, reference),
+            )
+            await self._commit()
+        except Exception:
+            await self._rollback()
+            raise
 
     async def get_rep(self, discord_id: int) -> int:
         await self.ensure_member(discord_id)
@@ -181,16 +201,20 @@ class Database:
 
     async def add_rep(self, discord_id: int, amount: int, reference: str | None = None):
         await self.ensure_member(discord_id)
-        await self.conn.execute("BEGIN IMMEDIATE")
-        await self.conn.execute(
-            "UPDATE reputation SET rep = rep + ? WHERE discord_id=?",
-            (int(amount), int(discord_id)),
-        )
-        await self.conn.execute(
-            "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
-            (int(discord_id), "rep", 0, 0, int(amount), reference),
-        )
-        await self.conn.commit()
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE reputation SET rep = rep + ? WHERE discord_id=?",
+                (int(amount), int(discord_id)),
+            )
+            await self.conn.execute(
+                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
+                (int(discord_id), "rep", 0, 0, int(amount), reference),
+            )
+            await self._commit()
+        except Exception:
+            await self._rollback()
+            raise
 
     async def get_level(self, discord_id: int, per_level: int = 100) -> int:
         rep = await self.get_rep(discord_id)
@@ -251,17 +275,21 @@ class Database:
         return await cur.fetchone()
 
     async def claim_job(self, job_id: int, claimed_by: int) -> bool:
-        await self.conn.execute("BEGIN IMMEDIATE")
-        cur = await self.conn.execute(
-            """
-            UPDATE jobs
-            SET status='claimed', claimed_by=?, updated_at=datetime('now')
-            WHERE job_id=? AND status='open' AND claimed_by IS NULL
-            """,
-            (int(claimed_by), int(job_id)),
-        )
-        await self.conn.commit()
-        return cur.rowcount == 1
+        await self._begin()
+        try:
+            cur = await self.conn.execute(
+                """
+                UPDATE jobs
+                SET status='claimed', claimed_by=?, updated_at=datetime('now')
+                WHERE job_id=? AND status='open' AND claimed_by IS NULL
+                """,
+                (int(claimed_by), int(job_id)),
+            )
+            await self._commit()
+            return cur.rowcount == 1
+        except Exception:
+            await self._rollback()
+            raise
 
     async def set_job_thread(self, job_id: int, thread_id: int):
         await self.conn.execute(
@@ -271,43 +299,55 @@ class Database:
         await self.conn.commit()
 
     async def complete_job(self, job_id: int) -> bool:
-        await self.conn.execute("BEGIN IMMEDIATE")
-        cur = await self.conn.execute(
-            """
-            UPDATE jobs
-            SET status='completed', updated_at=datetime('now')
-            WHERE job_id=? AND status='claimed'
-            """,
-            (int(job_id),),
-        )
-        await self.conn.commit()
-        return cur.rowcount == 1
+        await self._begin()
+        try:
+            cur = await self.conn.execute(
+                """
+                UPDATE jobs
+                SET status='completed', updated_at=datetime('now')
+                WHERE job_id=? AND status='claimed'
+                """,
+                (int(job_id),),
+            )
+            await self._commit()
+            return cur.rowcount == 1
+        except Exception:
+            await self._rollback()
+            raise
 
     async def mark_paid(self, job_id: int) -> bool:
-        await self.conn.execute("BEGIN IMMEDIATE")
-        cur = await self.conn.execute(
-            """
-            UPDATE jobs
-            SET status='paid', updated_at=datetime('now')
-            WHERE job_id=? AND status='completed'
-            """,
-            (int(job_id),),
-        )
-        await self.conn.commit()
-        return cur.rowcount == 1
+        await self._begin()
+        try:
+            cur = await self.conn.execute(
+                """
+                UPDATE jobs
+                SET status='paid', updated_at=datetime('now')
+                WHERE job_id=? AND status='completed'
+                """,
+                (int(job_id),),
+            )
+            await self._commit()
+            return cur.rowcount == 1
+        except Exception:
+            await self._rollback()
+            raise
 
     async def cancel_job(self, job_id: int) -> bool:
-        await self.conn.execute("BEGIN IMMEDIATE")
-        cur = await self.conn.execute(
-            """
-            UPDATE jobs
-            SET status='cancelled', updated_at=datetime('now')
-            WHERE job_id=? AND status NOT IN ('paid','cancelled')
-            """,
-            (int(job_id),),
-        )
-        await self.conn.commit()
-        return cur.rowcount == 1
+        await self._begin()
+        try:
+            cur = await self.conn.execute(
+                """
+                UPDATE jobs
+                SET status='cancelled', updated_at=datetime('now')
+                WHERE job_id=? AND status NOT IN ('paid','cancelled')
+                """,
+                (int(job_id),),
+            )
+            await self._commit()
+            return cur.rowcount == 1
+        except Exception:
+            await self._rollback()
+            raise
 
     # =========================
     # SHARES ESCROW (CASHOUT)
@@ -376,27 +416,29 @@ class Database:
         if holding < int(shares):
             raise ValueError("Member does not have enough shares to sell.")
 
-        await self.conn.execute("BEGIN IMMEDIATE")
-
-        await self.conn.execute(
-            "UPDATE treasury SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE id=1",
-            (int(payout_amount), int(handled_by) if handled_by is not None else None),
-        )
-        await self.conn.execute(
-            "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
-            (int(shares), int(requester_id)),
-        )
-        await self.conn.execute(
-            "UPDATE shareholdings SET shares = shares - ? WHERE discord_id=?",
-            (int(shares), int(requester_id)),
-        )
-        await self.conn.execute(
-            "UPDATE cashout_requests SET status='paid', handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
-            (int(handled_by) if handled_by is not None else None, note, int(request_id)),
-        )
-
-        await self.conn.commit()
-        return requester_id, shares
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE treasury SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                (int(payout_amount), int(handled_by) if handled_by is not None else None),
+            )
+            await self.conn.execute(
+                "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
+                (int(shares), int(requester_id)),
+            )
+            await self.conn.execute(
+                "UPDATE shareholdings SET shares = shares - ? WHERE discord_id=?",
+                (int(shares), int(requester_id)),
+            )
+            await self.conn.execute(
+                "UPDATE cashout_requests SET status='paid', handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
+                (int(handled_by) if handled_by is not None else None, note, int(request_id)),
+            )
+            await self._commit()
+            return requester_id, shares
+        except Exception:
+            await self._rollback()
+            raise
 
     async def create_cashout_request(self, guild_id: int, channel_id: int, message_id: int, requester_id: int, shares: int) -> int:
         cur = await self.conn.execute(
