@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 import discord
 from discord.ext import commands
 
@@ -17,6 +18,8 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 
 REP_PER_JOB_PAYOUT = int(os.getenv("REP_PER_JOB_PAYOUT", "10") or "10")
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
+
+logger = logging.getLogger(__name__)
 
 
 def _tier_display_for_level(level: int) -> str:
@@ -90,6 +93,7 @@ def _extract_job_id_from_message(message: discord.Message) -> int | None:
             return None
         return int(m.group(1))
     except Exception:
+        logger.debug("Failed to extract job id from message embed", exc_info=True)
         return None
 
 
@@ -101,7 +105,7 @@ def _extract_min_level_from_embed(embed: discord.Embed) -> int:
                 if v.isdigit():
                     return int(v)
     except Exception:
-        pass
+        logger.debug("Failed to extract minimum level from job embed", exc_info=True)
     return 0
 
 
@@ -176,7 +180,7 @@ async def _sync_member_tier_roles(
                 removed.append(int(r.id))
                 changed = True
             except Exception:
-                pass
+                logger.debug("Failed removing tier role id=%s for member=%s", r.id, member.id, exc_info=True)
 
     # add expected if missing
     if expected_role:
@@ -187,7 +191,7 @@ async def _sync_member_tier_roles(
                 added = int(expected_role.id)
                 changed = True
             except Exception:
-                pass
+                logger.debug("Failed adding tier role id=%s for member=%s", expected_role.id, member.id, exc_info=True)
 
     # optional DM
     if notify_dm and before_level is not None:
@@ -212,7 +216,7 @@ async def _sync_member_tier_roles(
                 em.set_footer(text="Your tier role was updated automatically.")
                 await member.send(embed=em, files=_logo_files())
             except Exception:
-                pass
+                logger.debug("Failed sending rank-up DM to member=%s", member.id, exc_info=True)
 
     return {
         "changed": changed,
@@ -318,12 +322,12 @@ class JobPostModal(discord.ui.Modal):
 
             await interaction.followup.send(f"Job #{job_id} posted. Tier: {_tier_display(self.min_level)}", ephemeral=True)
 
-        except Exception as e:
-            print(f"[JOBS] JobPostModal callback error: {e}")
+        except Exception:
+            logger.exception("Job post modal callback failed")
             try:
                 await interaction.followup.send("Job creation failed due to an internal error. Check the bot console.", ephemeral=True)
             except Exception:
-                pass
+                logger.debug("Could not send modal failure followup", exc_info=True)
 
 
 class JobAcceptPersistentView(discord.ui.View):

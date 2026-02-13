@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 import discord
 from discord.ext import commands
 
@@ -19,6 +20,8 @@ FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
 
 # Rep / Level / Tier config
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
+
+logger = logging.getLogger(__name__)
 
 
 def is_finance_or_admin(member: discord.Member) -> bool:
@@ -42,7 +45,7 @@ def _logo_files():
         if os.path.exists(ASSET_ORG_LOGO_PNG):
             return [discord.File(ASSET_ORG_LOGO_PNG, filename="org_logo.png")]
     except Exception:
-        pass
+        logger.exception("Failed to load org logo asset: %s", ASSET_ORG_LOGO_PNG)
     return []
 
 
@@ -63,6 +66,7 @@ async def _get_thread(guild: discord.Guild | None, thread_id: int | None):
     try:
         return await guild.fetch_channel(thread_id)
     except Exception:
+        logger.debug("Could not fetch thread/channel id=%s", thread_id, exc_info=True)
         return None
 
 
@@ -81,6 +85,7 @@ def _extract_request_id_from_message(message: discord.Message) -> int | None:
             return None
         return int(m.group(1))
     except Exception:
+        logger.debug("Failed to extract cashout request id from message", exc_info=True)
         return None
 
 
@@ -141,7 +146,7 @@ class CashoutPersistentView(discord.ui.View):
                     "Next: transfer aUEC manually in-game, then click **Mark Paid**."
                 )
             except Exception:
-                pass
+                logger.debug("Failed to send approval update to cashout thread request_id=%s", rid, exc_info=True)
 
         await interaction.followup.send("Approved.", ephemeral=True)
 
@@ -175,7 +180,7 @@ class CashoutPersistentView(discord.ui.View):
         try:
             await self.db.unlock_shares(requester_id, int(shares))
         except Exception:
-            pass
+            logger.exception("Failed to unlock shares for requester_id=%s request_id=%s", requester_id, rid)
 
         await self.db.set_cashout_status(
             request_id=rid,
@@ -194,7 +199,7 @@ class CashoutPersistentView(discord.ui.View):
                 await th.send(f"🟥 Rejected by {interaction.user.mention}. Shares unlocked for <@{requester_id}>.")
                 await th.edit(archived=True, locked=True)
             except Exception:
-                pass
+                logger.debug("Failed to update rejection thread state request_id=%s", rid, exc_info=True)
 
         await interaction.followup.send("Rejected and unlocked shares.", ephemeral=True)
 
@@ -259,7 +264,7 @@ class CashoutPersistentView(discord.ui.View):
                 )
                 await th.edit(archived=True, locked=True)
             except Exception:
-                pass
+                logger.debug("Failed to update paid thread state request_id=%s", rid, exc_info=True)
 
         await interaction.followup.send("Marked paid and finalized shares.", ephemeral=True)
 

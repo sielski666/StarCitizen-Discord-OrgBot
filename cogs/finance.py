@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 import discord
 from discord.ext import commands
 
@@ -10,13 +11,15 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 SHARE_PRICE = 100_000
 SHARE_CASHOUT_AUEC_PER_SHARE = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(SHARE_PRICE)) or SHARE_PRICE)
 
+logger = logging.getLogger(__name__)
+
 
 def _logo_files():
     try:
         if os.path.exists(ASSET_ORG_LOGO_PNG):
             return [discord.File(ASSET_ORG_LOGO_PNG, filename="org_logo.png")]
     except Exception:
-        pass
+        logger.exception("Failed to load org logo asset: %s", ASSET_ORG_LOGO_PNG)
     return []
 
 
@@ -38,6 +41,7 @@ async def _mention_or_fallback(guild: discord.Guild | None, user_id: int) -> str
         try:
             m = await guild.fetch_member(user_id)
         except Exception:
+            logger.debug("Could not fetch member id=%s for mention fallback", user_id, exc_info=True)
             m = None
 
     if m:
@@ -56,6 +60,7 @@ def _extract_paid_by_id(reference: str | None) -> int | None:
     try:
         return int(m.group(1))
     except Exception:
+        logger.debug("Could not parse paid_by id from reference", exc_info=True)
         return None
 
 
