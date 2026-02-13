@@ -18,7 +18,7 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 
-bot = commands.Bot(intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 db = Database()
 bot.db = db  # ✅ so cogs can access bot.db if they use that pattern

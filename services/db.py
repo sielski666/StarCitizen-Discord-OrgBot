@@ -496,3 +496,114 @@ class Database:
             (*params, int(limit)),
         )
         return await cur.fetchall()
+
+    async def reconcile_escrow(
+        self,
+        discord_id: int | None = None,
+        dry_run: bool = True,
+        force_clear_active: bool = False,
+        handled_by: int | None = None,
+    ):
+        """
+        Rebuild shares_escrow.locked_shares from active cashout requests.
+
+        Active requests: pending, approved.
+        If force_clear_active=True, active requests in scope are marked rejected and expected locks become 0.
+        """
+        if self.conn is None:
+            raise RuntimeError("Database not connected")
+
+        params: list = []
+        scope_where = ""
+        if discord_id is not None:
+            scope_where = "WHERE requester_id=?"
+            params.append(int(discord_id))
+
+        requests_rejected: list[int] = []
+
+        # Optionally reject active requests first.
+        if force_clear_active:
+            cur = await self.conn.execute(
+                f"""
+                SELECT request_id FROM cashout_requests
+                {scope_where} { 'AND' if scope_where else 'WHERE' } status IN ('pending','approved')
+                """,
+                tuple(params),
+            )
+            rows = await cur.fetchall()
+            requests_rejected = [int(r[0]) for r in rows]
+
+            if not dry_run and requests_rejected:
+                q = ",".join(["?"] * len(requests_rejected))
+                await self.conn.execute(
+                    f"""
+                    UPDATE cashout_requests
+                    SET status='rejected',
+                        handled_by=?,
+                        handled_note=COALESCE(handled_note,'') || CASE WHEN handled_note IS NULL OR handled_note='' THEN '' ELSE ' | ' END || 'reconcile force_clear_active',
+                        updated_at=datetime('now')
+                    WHERE request_id IN ({q})
+                    """,
+                    (int(handled_by) if handled_by is not None else None, *requests_rejected),
+                )
+
+        # Build user scope from existing tables and cashout requests.
+        users: set[int] = set()
+        if discord_id is not None:
+            users.add(int(discord_id))
+        else:
+            for table, col in (("shareholdings", "discord_id"), ("shares_escrow", "discord_id"), ("cashout_requests", "requester_id")):
+                cur = await self.conn.execute(f"SELECT DISTINCT {col} FROM {table}")
+                rows = await cur.fetchall()
+                users.update(int(r[0]) for r in rows if r and r[0] is not None)
+
+        results = []
+        for uid in sorted(users):
+            await self.ensure_member(uid)
+
+            cur_hold = await self.conn.execute("SELECT shares FROM shareholdings WHERE discord_id=?", (uid,))
+            row_hold = await cur_hold.fetchone()
+            total_shares = int(row_hold[0]) if row_hold else 0
+
+            cur_lock = await self.conn.execute("SELECT locked_shares FROM shares_escrow WHERE discord_id=?", (uid,))
+            row_lock = await cur_lock.fetchone()
+            locked_before = int(row_lock[0]) if row_lock else 0
+
+            if force_clear_active:
+                expected_locked = 0
+            else:
+                cur_exp = await self.conn.execute(
+                    """
+                    SELECT COALESCE(SUM(shares),0)
+                    FROM cashout_requests
+                    WHERE requester_id=? AND status IN ('pending','approved')
+                    """,
+                    (uid,),
+                )
+                row_exp = await cur_exp.fetchone()
+                expected_locked = int(row_exp[0]) if row_exp else 0
+
+            locked_after = max(0, min(int(expected_locked), int(total_shares)))
+            changed = int(locked_before) != int(locked_after)
+
+            if changed and not dry_run:
+                await self.conn.execute(
+                    "UPDATE shares_escrow SET locked_shares=? WHERE discord_id=?",
+                    (int(locked_after), int(uid)),
+                )
+
+            results.append(
+                {
+                    "discord_id": int(uid),
+                    "total_shares": int(total_shares),
+                    "expected_locked": int(expected_locked),
+                    "locked_before": int(locked_before),
+                    "locked_after": int(locked_after),
+                    "changed": bool(changed),
+                }
+            )
+
+        if not dry_run:
+            await self.conn.commit()
+
+        return {"users": results, "requests_rejected": requests_rejected}
