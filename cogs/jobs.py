@@ -652,6 +652,7 @@ class JobsCog(commands.Cog):
         self.db = db
 
     jobs = discord.SlashCommandGroup("jobs", "Job board commands")
+    jobtemplates = discord.SlashCommandGroup("jobtemplates", "Job template admin commands")
 
     @jobs.command(name="post", description="Create a job (tier dropdown + form)")
     @jobs_poster_or_admin()
@@ -696,6 +697,66 @@ class JobsCog(commands.Cog):
 
         view = JobTierSelectView(self)
         await ctx.respond("Choose the job tier:", view=view, ephemeral=True)
+
+    @jobtemplates.command(name="add", description="(Admin) Create/update a job template")
+    @admin_only()
+    async def template_add(
+        self,
+        ctx: discord.ApplicationContext,
+        name: str,
+        title: str,
+        description: str,
+        reward_min: int,
+        reward_max: int,
+        tier_required: int = 0,
+        category: str = "general",
+    ):
+        if reward_min < 0 or reward_max < 0 or reward_max < reward_min:
+            return await ctx.respond("Invalid reward range.", ephemeral=True)
+
+        template_id = await self.db.upsert_job_template(
+            name=name,
+            default_title=title,
+            default_description=description,
+            default_reward_min=int(reward_min),
+            default_reward_max=int(reward_max),
+            default_tier_required=int(tier_required),
+            category=category,
+            active=True,
+        )
+        await ctx.respond(f"Template `{name}` saved (id `{template_id}`).", ephemeral=True)
+
+    @jobtemplates.command(name="list", description="List job templates")
+    async def template_list(self, ctx: discord.ApplicationContext, include_inactive: bool = True):
+        rows = await self.db.list_job_templates(include_inactive=bool(include_inactive), limit=50)
+        if not rows:
+            return await ctx.respond("No templates found.", ephemeral=True)
+
+        lines = []
+        for r in rows[:25]:
+            template_id, name, default_title, default_description, rmin, rmax, tier_required, category, active = r
+            state = "active" if int(active) == 1 else "inactive"
+            lines.append(
+                f"• `{name}` ({state}) — reward `{int(rmin):,}`-`{int(rmax):,}`, tier `{int(tier_required)}+`, category `{category or 'general'}`"
+            )
+
+        await ctx.respond("\n".join(lines), ephemeral=True)
+
+    @jobtemplates.command(name="disable", description="(Admin) Disable a job template")
+    @admin_only()
+    async def template_disable(self, ctx: discord.ApplicationContext, name: str):
+        ok = await self.db.set_job_template_active(name=name, active=False)
+        if not ok:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        await ctx.respond(f"Template `{name}` disabled.", ephemeral=True)
+
+    @jobtemplates.command(name="enable", description="(Admin) Enable a job template")
+    @admin_only()
+    async def template_enable(self, ctx: discord.ApplicationContext, name: str):
+        ok = await self.db.set_job_template_active(name=name, active=True)
+        if not ok:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        await ctx.respond(f"Template `{name}` enabled.", ephemeral=True)
 
     # COMPLETE (Claimer OR Admin)
     @jobs.command(name="complete", description="Mark a job as completed (claimer or admin)")

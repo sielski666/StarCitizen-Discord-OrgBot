@@ -538,6 +538,104 @@ class Database:
         )
         return await cur.fetchone()
 
+    async def list_job_templates(self, include_inactive: bool = True, limit: int = 50):
+        if include_inactive:
+            cur = await self.conn.execute(
+                """
+                SELECT template_id, name, default_title, default_description,
+                       default_reward_min, default_reward_max, default_tier_required,
+                       category, active
+                FROM job_templates
+                ORDER BY name ASC
+                LIMIT ?
+                """,
+                (int(limit),),
+            )
+        else:
+            cur = await self.conn.execute(
+                """
+                SELECT template_id, name, default_title, default_description,
+                       default_reward_min, default_reward_max, default_tier_required,
+                       category, active
+                FROM job_templates
+                WHERE active=1
+                ORDER BY name ASC
+                LIMIT ?
+                """,
+                (int(limit),),
+            )
+        return await cur.fetchall()
+
+    async def upsert_job_template(
+        self,
+        name: str,
+        default_title: str,
+        default_description: str,
+        default_reward_min: int,
+        default_reward_max: int,
+        default_tier_required: int,
+        category: str | None,
+        active: bool = True,
+    ):
+        await self._begin()
+        try:
+            existing = await self.get_job_template_by_name(name)
+            if existing:
+                template_id = int(existing[0])
+                await self.conn.execute(
+                    """
+                    UPDATE job_templates
+                    SET default_title=?, default_description=?, default_reward_min=?,
+                        default_reward_max=?, default_tier_required=?, category=?, active=?
+                    WHERE template_id=?
+                    """,
+                    (
+                        str(default_title),
+                        str(default_description),
+                        int(default_reward_min),
+                        int(default_reward_max),
+                        int(default_tier_required),
+                        (str(category).strip() if category else None),
+                        (1 if active else 0),
+                        int(template_id),
+                    ),
+                )
+            else:
+                cur = await self.conn.execute(
+                    """
+                    INSERT INTO job_templates(
+                        name, default_title, default_description,
+                        default_reward_min, default_reward_max,
+                        default_tier_required, category, active
+                    ) VALUES(?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        str(name).strip(),
+                        str(default_title),
+                        str(default_description),
+                        int(default_reward_min),
+                        int(default_reward_max),
+                        int(default_tier_required),
+                        (str(category).strip() if category else None),
+                        (1 if active else 0),
+                    ),
+                )
+                template_id = int(cur.lastrowid)
+
+            await self._commit()
+            return int(template_id)
+        except Exception:
+            await self._rollback()
+            raise
+
+    async def set_job_template_active(self, name: str, active: bool) -> bool:
+        cur = await self.conn.execute(
+            "UPDATE job_templates SET active=? WHERE lower(name)=lower(?)",
+            ((1 if active else 0), str(name).strip()),
+        )
+        await self.conn.commit()
+        return cur.rowcount > 0
+
     async def claim_job(self, job_id: int, claimed_by: int) -> bool:
         await self._begin()
         try:
