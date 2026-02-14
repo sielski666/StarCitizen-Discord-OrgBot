@@ -318,11 +318,19 @@ class JobPostModal(discord.ui.Modal):
 
         try:
             placeholder = discord.Embed(title="Creating job…", description="Please wait.", colour=discord.Colour.from_rgb(32, 41, 74))
+
             channel = interaction.channel
-            if JOBS_CHANNEL_ID and interaction.guild:
+            if JOBS_CHANNEL_ID:
+                if not interaction.guild:
+                    return await interaction.followup.send("Guild context missing for jobs channel routing.", ephemeral=True)
                 ch = interaction.guild.get_channel(JOBS_CHANNEL_ID)
-                if ch is not None:
-                    channel = ch
+                if ch is None:
+                    return await interaction.followup.send(
+                        f"Configured JOBS_CHANNEL_ID (<#{JOBS_CHANNEL_ID}>) was not found. Run `/setup start`.",
+                        ephemeral=True,
+                    )
+                channel = ch
+
             if channel is None:
                 return await interaction.followup.send("Could not find the channel to post the job in.", ephemeral=True)
 
@@ -342,7 +350,11 @@ class JobPostModal(discord.ui.Modal):
             files = _logo_files()
             await msg.edit(embed=embed, view=JobWorkflowView(self.cog.db, status="open"), files=files if files else None)
 
-            await interaction.followup.send(f"Job #{job_id} posted. Tier: {_tier_display(self.min_level)}", ephemeral=True)
+            posted_in = f" in <#{channel.id}>" if getattr(channel, "id", None) else ""
+            await interaction.followup.send(
+                f"Job #{job_id} posted{posted_in}. Tier: {_tier_display(self.min_level)}",
+                ephemeral=True,
+            )
 
             if self.source_message and self.source_view:
                 try:
