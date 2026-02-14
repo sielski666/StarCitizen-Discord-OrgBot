@@ -202,12 +202,58 @@ class SetupCog(commands.Cog):
 
         ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    @setup_group.command(name="start", description="Open setup form (guild, roles, channels)")
+    @setup_group.command(name="start", description="Auto-setup from env + create missing channels")
     async def setup_start(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
         if not member or not is_admin_member(member):
             return await ctx.respond("Admin only.", ephemeral=True)
-        await ctx.send_modal(SetupModal(self))
+
+        guild = ctx.guild
+        if guild is None:
+            return await ctx.respond("Guild context required.", ephemeral=True)
+
+        env = self._read_env()
+
+        ensured = await self._ensure_channels(
+            guild,
+            env.get("JOBS_CHANNEL_ID", ""),
+            env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
+            env.get("SHARES_SELL_CHANNEL_ID", ""),
+        )
+        if ensured is None:
+            return await ctx.respond(
+                "Failed creating/validating channels. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
+        jobs_id, treasury_id, shares_id = ensured
+
+        updates = {
+            "GUILD_ID": env.get("GUILD_ID", "") or str(guild.id),
+            "JOBS_CHANNEL_ID": str(jobs_id),
+            "TREASURY_CHANNEL_ID": str(treasury_id),
+            "SHARES_SELL_CHANNEL_ID": str(shares_id),
+            "FINANCE_CHANNEL_ID": str(treasury_id),
+        }
+        self._write_env(updates)
+
+        missing_roles = [
+            k for k in ("FINANCE_ROLE_ID", "JOBS_ADMIN_ROLE_ID") if not env.get(k)
+        ]
+
+        msg = (
+            "✅ Setup synced from .env and guild context\n"
+            f"Guild: `{updates['GUILD_ID']}`\n"
+            f"Jobs: <#{jobs_id}>\n"
+            f"Treasury: <#{treasury_id}>\n"
+            f"Shares Sell: <#{shares_id}>\n"
+            "(Token remains managed in `.env` as DISCORD_TOKEN.)"
+        )
+        if missing_roles:
+            msg += "\n\n⚠️ Missing role IDs in .env: " + ", ".join(missing_roles)
+
+        msg += "\n\nRun: `sudo systemctl restart starcitizen-orgbot` to apply config changes."
+        await ctx.respond(msg, ephemeral=True)
 
     @setup_group.command(name="status", description="Show current setup values")
     async def setup_status(self, ctx: discord.ApplicationContext):
