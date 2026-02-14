@@ -402,12 +402,6 @@ class Database:
         if status != "approved":
             raise ValueError(f"Request must be approved first (status: {status}).")
 
-        tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
-        trow = await tcur.fetchone()
-        treasury_amount = int(trow[0]) if trow else 0
-        if treasury_amount < int(payout_amount):
-            raise ValueError("Treasury too low for this payout.")
-
         lcur = await self.conn.execute(
             "SELECT locked_shares FROM shares_escrow WHERE discord_id=?",
             (int(requester_id),),
@@ -428,10 +422,6 @@ class Database:
 
         await self._begin()
         try:
-            await self.conn.execute(
-                "UPDATE treasury SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE id=1",
-                (int(payout_amount), int(handled_by) if handled_by is not None else None),
-            )
             await self.conn.execute(
                 "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
                 (int(shares), int(requester_id)),
