@@ -18,6 +18,7 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 
 REP_PER_JOB_PAYOUT = int(os.getenv("REP_PER_JOB_PAYOUT", "10") or "10")
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
+JOBS_CHANNEL_ID = int(os.getenv("JOBS_CHANNEL_ID", "0") or "0")
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,12 @@ def _extract_min_level_from_embed(embed: discord.Embed) -> int:
 
 def _tier_display(min_level: int) -> str:
     return required_min_level_for_tier(int(min_level))
+
+
+def _is_allowed_jobs_channel(ctx: discord.ApplicationContext) -> bool:
+    if JOBS_CHANNEL_ID <= 0:
+        return True
+    return bool(ctx.channel and int(ctx.channel.id) == int(JOBS_CHANNEL_ID))
 
 
 def _job_embed(
@@ -611,12 +618,16 @@ class JobsCog(commands.Cog):
     @jobs.command(name="post", description="Create a job (tier dropdown + form)")
     @jobs_poster_or_admin()
     async def post(self, ctx: discord.ApplicationContext):
+        if not _is_allowed_jobs_channel(ctx):
+            return await ctx.respond(f"Use this command in <#{JOBS_CHANNEL_ID}>.", ephemeral=True)
         view = JobTierSelectView(self)
         await ctx.respond("Choose the job tier:", view=view, ephemeral=True)
 
     # COMPLETE (Claimer OR Admin)
     @jobs.command(name="complete", description="Mark a job as completed (claimer or admin)")
     async def complete(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        if not _is_allowed_jobs_channel(ctx):
+            return await ctx.respond(f"Use this command in <#{JOBS_CHANNEL_ID}>.", ephemeral=True)
         row = await self.db.get_job(int(job_id))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
@@ -673,6 +684,8 @@ class JobsCog(commands.Cog):
     @jobs.command(name="confirm", description="(Finance/Admin) Confirm completed job and reward Org Points")
     @finance_or_admin()
     async def confirm(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        if not _is_allowed_jobs_channel(ctx):
+            return await ctx.respond(f"Use this command in <#{JOBS_CHANNEL_ID}>.", ephemeral=True)
         row = await self.db.get_job(int(job_id))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
@@ -769,6 +782,8 @@ class JobsCog(commands.Cog):
     @jobs.command(name="cancel", description="(Admin) Cancel a job (locks/archives its thread)")
     @admin_only()
     async def cancel(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        if not _is_allowed_jobs_channel(ctx):
+            return await ctx.respond(f"Use this command in <#{JOBS_CHANNEL_ID}>.", ephemeral=True)
         row = await self.db.get_job(int(job_id))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
@@ -823,6 +838,8 @@ class JobsCog(commands.Cog):
     @jobs.command(name="reopen", description="(Admin) Reopen a cancelled job (sets back to OPEN)")
     @admin_only()
     async def reopen(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        if not _is_allowed_jobs_channel(ctx):
+            return await ctx.respond(f"Use this command in <#{JOBS_CHANNEL_ID}>.", ephemeral=True)
         row = await self.db.get_job(int(job_id))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)

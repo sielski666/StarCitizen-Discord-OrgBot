@@ -17,6 +17,7 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 SHARE_PRICE = 100_000  # Org Credits per share (buy)
 SHARE_CASHOUT_AUEC_PER_SHARE = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(SHARE_PRICE)) or SHARE_PRICE)
 FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
+SHARES_SELL_CHANNEL_ID = int(os.getenv("SHARES_SELL_CHANNEL_ID", "0") or "0")
 
 # Rep / Level / Tier config
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
@@ -684,6 +685,10 @@ class AccountCog(commands.Cog):
     async def sellshares(self, ctx: discord.ApplicationContext, shares: int):
         await ctx.defer(ephemeral=True)
 
+        required_channel_id = SHARES_SELL_CHANNEL_ID or FINANCE_CHANNEL_ID
+        if required_channel_id and (ctx.channel is None or int(ctx.channel.id) != int(required_channel_id)):
+            return await ctx.followup.send(f"Use this command in <#{required_channel_id}>.", ephemeral=True)
+
         if shares < 1:
             return await ctx.followup.send("Shares must be at least 1.", ephemeral=True)
 
@@ -702,8 +707,9 @@ class AccountCog(commands.Cog):
             return await ctx.followup.send(str(e), ephemeral=True)
 
         post_channel: discord.abc.MessageableChannel = ctx.channel
-        if FINANCE_CHANNEL_ID and ctx.guild:
-            ch = ctx.guild.get_channel(FINANCE_CHANNEL_ID)
+        target_channel_id = SHARES_SELL_CHANNEL_ID or FINANCE_CHANNEL_ID
+        if target_channel_id and ctx.guild:
+            ch = ctx.guild.get_channel(target_channel_id)
             if ch:
                 post_channel = ch
 
