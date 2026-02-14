@@ -5,14 +5,14 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from services.db import Database
 from cogs.jobs import JobsCog, JobWorkflowView
 from cogs.account import AccountCog, CashoutPersistentView
 from cogs.treasury import TreasuryCog
 from cogs.finance import FinanceCog  # ✅ make sure this exists now
 from cogs.setup import SetupCog
-
-load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0") or "0")
