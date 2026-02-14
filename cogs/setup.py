@@ -83,13 +83,31 @@ class SetupModal(discord.ui.Modal):
                 return await interaction.response.send_message(f"{key} must be numeric.", ephemeral=True)
 
         parts = [p.strip() for p in (self.channel_ids.value or "").split(",")]
-        if len(parts) != 3 or not all(x.isdigit() for x in parts):
+        if len(parts) != 3 or not all((x == "" or x.isdigit()) for x in parts):
             return await interaction.response.send_message(
-                "Channel IDs must be exactly 3 numeric IDs: jobs, treasury, shares.",
+                "Channel IDs must be 3 values: jobs, treasury, shares (numeric or blank).",
                 ephemeral=True,
             )
 
         jobs_channel_id, treasury_channel_id, shares_sell_channel_id = parts
+
+        guild = interaction.guild
+        if guild is None:
+            return await interaction.response.send_message("Guild context required.", ephemeral=True)
+
+        channels = await self.cog._ensure_channels(
+            guild,
+            jobs_channel_id,
+            treasury_channel_id,
+            shares_sell_channel_id,
+        )
+        if channels is None:
+            return await interaction.response.send_message(
+                "Failed creating/validating channels. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
+        jobs_channel_id, treasury_channel_id, shares_sell_channel_id = channels
 
         updates = {
             "DISCORD_TOKEN": token,
@@ -106,7 +124,10 @@ class SetupModal(discord.ui.Modal):
         self.cog._write_env(updates)
 
         await interaction.response.send_message(
-            "✅ Setup saved to .env\n"
+            "✅ Setup saved + channels ensured\n"
+            f"Jobs: <#{jobs_channel_id}>\n"
+            f"Treasury: <#{treasury_channel_id}>\n"
+            f"Shares Sell: <#{shares_sell_channel_id}>\n"
             "Run: `sudo systemctl restart starcitizen-orgbot` to apply token/config updates.",
             ephemeral=True,
         )
@@ -117,6 +138,32 @@ class SetupCog(commands.Cog):
         self.bot = bot
 
     setup_group = discord.SlashCommandGroup("setup", "Server setup and config helpers")
+
+    async def _ensure_channels(
+        self,
+        guild: discord.Guild,
+        jobs_channel_id: str,
+        treasury_channel_id: str,
+        shares_sell_channel_id: str,
+    ) -> tuple[str, str, str] | None:
+        async def ensure_one(channel_id: str, default_name: str) -> str:
+            if channel_id.isdigit():
+                ch = guild.get_channel(int(channel_id))
+                if ch is not None:
+                    return str(ch.id)
+
+            by_name = discord.utils.get(guild.text_channels, name=default_name)
+            if by_name is None:
+                by_name = await guild.create_text_channel(default_name)
+            return str(by_name.id)
+
+        try:
+            jobs_id = await ensure_one(jobs_channel_id, "jobs")
+            treasury_id = await ensure_one(treasury_channel_id, "treasury")
+            shares_id = await ensure_one(shares_sell_channel_id, "share-sell-confirm")
+            return jobs_id, treasury_id, shares_id
+        except Exception:
+            return None
 
     def _read_env(self) -> dict[str, str]:
         data: dict[str, str] = {}
@@ -211,34 +258,28 @@ class SetupCog(commands.Cog):
             return await ctx.respond("Guild context required.", ephemeral=True)
 
         env = self._read_env()
-        updates: dict[str, str] = {}
 
-        async def ensure_channel(env_key: str, name: str) -> int:
-            existing_id = env.get(env_key, "")
-            if existing_id.isdigit():
-                ch = guild.get_channel(int(existing_id))
-                if ch:
-                    return ch.id
-
-            created = discord.utils.get(guild.text_channels, name=name)
-            if created is None:
-                created = await guild.create_text_channel(name)
-            updates[env_key] = str(created.id)
-            return created.id
-
-        try:
-            jobs_id = await ensure_channel("JOBS_CHANNEL_ID", "jobs")
-            treasury_id = await ensure_channel("TREASURY_CHANNEL_ID", "treasury")
-            shares_id = await ensure_channel("SHARES_SELL_CHANNEL_ID", "share-sell-confirm")
-        except Exception:
+        ensured = await self._ensure_channels(
+            guild,
+            env.get("JOBS_CHANNEL_ID", ""),
+            env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
+            env.get("SHARES_SELL_CHANNEL_ID", ""),
+        )
+        if ensured is None:
             return await ctx.respond(
                 "Failed creating channels. Ensure bot has Manage Channels permission.",
                 ephemeral=True,
             )
 
-        updates["FINANCE_CHANNEL_ID"] = str(treasury_id)
-        if updates:
-            self._write_env(updates)
+        jobs_id, treasury_id, shares_id = ensured
+
+        updates = {
+            "JOBS_CHANNEL_ID": str(jobs_id),
+            "TREASURY_CHANNEL_ID": str(treasury_id),
+            "SHARES_SELL_CHANNEL_ID": str(shares_id),
+            "FINANCE_CHANNEL_ID": str(treasury_id),
+        }
+        self._write_env(updates)
 
         await ctx.respond(
             "✅ Channels ready\n"
