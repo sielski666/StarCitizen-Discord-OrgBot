@@ -334,9 +334,8 @@ class JobPostModal(discord.ui.Modal):
 
             embed = _job_embed(job_id, title, desc, reward, "open", interaction.user.id, None, min_level=self.min_level)
 
-            view = getattr(self.cog.bot, "job_accept_view", None)
             files = _logo_files()
-            await msg.edit(embed=embed, view=view, files=files if files else None)
+            await msg.edit(embed=embed, view=JobWorkflowView(self.cog.db, status="open"), files=files if files else None)
 
             await interaction.followup.send(f"Job #{job_id} posted. Tier: {_tier_display(self.min_level)}", ephemeral=True)
 
@@ -357,16 +356,26 @@ class JobPostModal(discord.ui.Modal):
                 logger.debug("Could not send modal failure followup", exc_info=True)
 
 
-class JobAcceptPersistentView(discord.ui.View):
-    """
-    Persistent accept button:
-      - timeout=None
-      - constant custom_id
-      - registered once via bot.add_view(...)
-    """
-    def __init__(self, db: Database):
+class JobWorkflowView(discord.ui.View):
+    """Three-stage job workflow via buttons: Accept -> Complete -> Confirm."""
+
+    def __init__(self, db: Database, status: str = "open"):
         super().__init__(timeout=None)
         self.db = db
+
+        if status == "open":
+            self.complete_btn.disabled = True
+            self.confirm_btn.disabled = True
+        elif status == "claimed":
+            self.accept_btn.disabled = True
+            self.confirm_btn.disabled = True
+        elif status == "completed":
+            self.accept_btn.disabled = True
+            self.complete_btn.disabled = True
+        else:  # paid/cancelled/other terminal
+            self.accept_btn.disabled = True
+            self.complete_btn.disabled = True
+            self.confirm_btn.disabled = True
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.success, custom_id="job_accept")
     async def accept_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -382,7 +391,6 @@ class JobAcceptPersistentView(discord.ui.View):
         embed = interaction.message.embeds[0]
         min_level = _extract_min_level_from_embed(embed)
 
-        # Level gating
         if int(min_level) > 0:
             lvl = await self.db.get_level(interaction.user.id, per_level=LEVEL_PER_REP)
             if int(lvl) < int(min_level):
@@ -393,7 +401,6 @@ class JobAcceptPersistentView(discord.ui.View):
 
         row = await self.db.get_job(int(jid))
         if not row:
-            await interaction.message.edit(view=None)
             return await interaction.followup.send("Job not found.", ephemeral=True)
 
         (
@@ -412,12 +419,10 @@ class JobAcceptPersistentView(discord.ui.View):
         ) = row
 
         if status != "open":
-            await interaction.message.edit(view=None)
             return await interaction.followup.send(f"This job is no longer open (status: {_status_text(status)}).", ephemeral=True)
 
         claimed = await self.db.claim_job(job_id_db, claimed_by=interaction.user.id)
         if not claimed:
-            await interaction.message.edit(view=None)
             return await interaction.followup.send("Someone else accepted it first.", ephemeral=True)
 
         thread = await interaction.message.create_thread(
@@ -429,15 +434,171 @@ class JobAcceptPersistentView(discord.ui.View):
         updated_embed = _job_embed(job_id_db, title, description, int(reward), "claimed", created_by, interaction.user.id, min_level=min_level)
 
         files = _logo_files()
-        await interaction.message.edit(embed=updated_embed, view=None, files=files if files else None)
+        await interaction.message.edit(
+            embed=updated_embed,
+            view=JobWorkflowView(self.db, status="claimed"),
+            files=files if files else None,
+        )
 
         await thread.send(
             f"✅ **Accepted** by {interaction.user.mention}\n"
             f"Tier: {_tier_display(min_level)}\n\n"
-            f"When finished: `/jobs complete job_id:{job_id_db}`"
+            f"When finished: click **Complete** on the job card."
         )
 
         await interaction.followup.send("Accepted. Thread created.", ephemeral=True)
+
+    @discord.ui.button(label="Complete", style=discord.ButtonStyle.primary, custom_id="job_complete")
+    async def complete_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.message or not interaction.message.embeds:
+            return await interaction.followup.send("Missing job embed context.", ephemeral=True)
+
+        jid = _extract_job_id_from_message(interaction.message)
+        if not jid:
+            return await interaction.followup.send("Could not read Job ID from message.", ephemeral=True)
+
+        row = await self.db.get_job(int(jid))
+        if not row:
+            return await interaction.followup.send("Job not found.", ephemeral=True)
+
+        (
+            job_id_db,
+            channel_id,
+            message_id,
+            title,
+            description,
+            reward,
+            status,
+            created_by,
+            claimed_by,
+            thread_id,
+            created_at,
+            updated_at,
+        ) = row
+
+        is_owner = claimed_by == interaction.user.id
+        is_admin_user = isinstance(interaction.user, discord.Member) and is_admin_member(interaction.user)
+        if not (is_owner or is_admin_user):
+            return await interaction.followup.send("Only the claimer or an admin can complete this job.", ephemeral=True)
+
+        ok = await self.db.complete_job(job_id_db)
+        if not ok:
+            return await interaction.followup.send(f"Cannot complete Job #{job_id_db} (status: {_status_text(status)}).", ephemeral=True)
+
+        min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
+        updated = _job_embed(job_id_db, title, description, int(reward), "completed", created_by, claimed_by, min_level=min_level)
+
+        files = _logo_files()
+        await interaction.message.edit(
+            embed=updated,
+            view=JobWorkflowView(self.db, status="completed"),
+            files=files if files else None,
+        )
+
+        if thread_id and interaction.guild:
+            try:
+                thread = interaction.guild.get_thread(thread_id) or await interaction.guild.fetch_channel(thread_id)
+                await thread.send("🧾 Job marked **COMPLETED**. Awaiting admin confirmation.")
+            except Exception:
+                logger.debug("Failed sending completion thread update", exc_info=True)
+
+        await interaction.followup.send(f"Job #{job_id_db} marked completed.", ephemeral=True)
+
+    @discord.ui.button(label="Confirm Reward", style=discord.ButtonStyle.secondary, custom_id="job_confirm")
+    async def confirm_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if not member or not (is_admin_member(member) or is_finance(member)):
+            return await interaction.followup.send("Only finance/admin can confirm rewards.", ephemeral=True)
+
+        if not interaction.message or not interaction.message.embeds:
+            return await interaction.followup.send("Missing job embed context.", ephemeral=True)
+
+        jid = _extract_job_id_from_message(interaction.message)
+        if not jid:
+            return await interaction.followup.send("Could not read Job ID from message.", ephemeral=True)
+
+        row = await self.db.get_job(int(jid))
+        if not row:
+            return await interaction.followup.send("Job not found.", ephemeral=True)
+
+        (
+            job_id_db,
+            channel_id,
+            message_id,
+            title,
+            description,
+            reward,
+            status,
+            created_by,
+            claimed_by,
+            thread_id,
+            created_at,
+            updated_at,
+        ) = row
+
+        if status != "completed":
+            return await interaction.followup.send(f"Job must be COMPLETED before confirmation (status: {_status_text(status)}).", ephemeral=True)
+        if not claimed_by:
+            return await interaction.followup.send("No claimer to reward.", ephemeral=True)
+
+        await self.db.add_balance(
+            discord_id=int(claimed_by),
+            amount=int(reward),
+            tx_type="payout",
+            reference=f"job:{job_id_db}|by:{interaction.user.id}",
+        )
+
+        before_level = await self.db.get_level(int(claimed_by), per_level=LEVEL_PER_REP)
+
+        rep_added = 0
+        if int(REP_PER_JOB_PAYOUT) > 0:
+            try:
+                await self.db.add_rep(
+                    discord_id=int(claimed_by),
+                    amount=int(REP_PER_JOB_PAYOUT),
+                    reference=f"job:{job_id_db}|confirm_by:{interaction.user.id}",
+                )
+                rep_added = int(REP_PER_JOB_PAYOUT)
+            except Exception:
+                logger.debug("Failed adding rep for job confirm", exc_info=True)
+
+        if interaction.guild:
+            member_obj = interaction.guild.get_member(int(claimed_by))
+            if member_obj is None:
+                try:
+                    member_obj = await interaction.guild.fetch_member(int(claimed_by))
+                except Exception:
+                    member_obj = None
+            if member_obj is not None:
+                await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
+
+        ok = await self.db.mark_paid(job_id_db)
+        if not ok:
+            return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
+
+        min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
+        updated = _job_embed(job_id_db, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
+
+        files = _logo_files()
+        await interaction.message.edit(
+            embed=updated,
+            view=JobWorkflowView(self.db, status="paid"),
+            files=files if files else None,
+        )
+
+        if thread_id and interaction.guild:
+            try:
+                thread = interaction.guild.get_thread(thread_id) or await interaction.guild.fetch_channel(thread_id)
+                extra = f"\n+`{rep_added}` Reputation" if rep_added else ""
+                await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{claimed_by}>. Status: **ORG POINTS REWARDED**.{extra}")
+            except Exception:
+                logger.debug("Failed sending reward thread update", exc_info=True)
+
+        await interaction.followup.send(f"Job #{job_id_db} confirmed. Org Points rewarded.", ephemeral=True)
 
 
 class JobsCog(commands.Cog):
@@ -495,7 +656,7 @@ class JobsCog(commands.Cog):
 
             updated = _job_embed(jid, title, description, int(reward), "completed", created_by, claimed_by, min_level=min_level)
             files = _logo_files()
-            await msg.edit(embed=updated, view=None, files=files if files else None)
+            await msg.edit(embed=updated, view=JobWorkflowView(self.db, status="completed"), files=files if files else None)
         except Exception:
             pass
 
@@ -589,7 +750,7 @@ class JobsCog(commands.Cog):
 
             updated = _job_embed(jid, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
             files = _logo_files()
-            await msg.edit(embed=updated, view=None, files=files if files else None)
+            await msg.edit(embed=updated, view=JobWorkflowView(self.db, status="paid"), files=files if files else None)
         except Exception:
             pass
 
@@ -708,8 +869,7 @@ class JobsCog(commands.Cog):
             updated = _job_embed(jid, title, description, int(reward), "open", created_by, None, min_level=min_level)
 
             files = _logo_files()
-            view = getattr(self.bot, "job_accept_view", None)
-            await msg.edit(embed=updated, view=view, files=files if files else None)
+            await msg.edit(embed=updated, view=JobWorkflowView(self.db, status="open"), files=files if files else None)
         except Exception:
             pass
 
@@ -721,6 +881,5 @@ def setup(bot: commands.Bot):
 
     bot.add_cog(JobsCog(bot, db))
 
-    # Register ONE persistent view for Job Accept
-    bot.job_accept_view = JobAcceptPersistentView(db)  # type: ignore
-    bot.add_view(bot.job_accept_view)  # type: ignore
+    # Register persistent workflow view callbacks (Accept/Complete/Confirm).
+    bot.add_view(JobWorkflowView(db, status="open"))  # type: ignore

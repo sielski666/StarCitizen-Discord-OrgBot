@@ -6,10 +6,11 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from services.db import Database
-from cogs.jobs import JobsCog, JobAcceptPersistentView
+from cogs.jobs import JobsCog, JobWorkflowView
 from cogs.account import AccountCog, CashoutPersistentView
 from cogs.treasury import TreasuryCog
 from cogs.finance import FinanceCog  # ✅ make sure this exists now
+from cogs.setup import SetupCog
 
 load_dotenv()
 
@@ -43,10 +44,10 @@ async def on_ready():
         bot.add_view(bot.cashout_view)  # type: ignore
         print("Registered CashoutPersistentView.")
 
-    if not hasattr(bot, "job_accept_view"):
-        bot.job_accept_view = JobAcceptPersistentView(db)  # type: ignore
-        bot.add_view(bot.job_accept_view)  # type: ignore
-        print("Registered JobAcceptPersistentView.")
+    if not hasattr(bot, "job_workflow_registered"):
+        bot.add_view(JobWorkflowView(db, status="open"))  # type: ignore
+        bot.job_workflow_registered = True  # type: ignore
+        print("Registered JobWorkflowView.")
 
     if GUILD_ID != 0:
         await bot.sync_commands(guild_ids=[GUILD_ID])
@@ -58,6 +59,7 @@ bot.add_cog(JobsCog(bot, db))
 bot.add_cog(AccountCog(bot, db))
 bot.add_cog(TreasuryCog(bot, db))
 bot.add_cog(FinanceCog(bot, db))  # ✅ finance dashboard
+bot.add_cog(SetupCog(bot))
 
 
 if not TOKEN:
