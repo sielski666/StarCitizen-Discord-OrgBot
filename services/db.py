@@ -1,6 +1,21 @@
-﻿import aiosqlite
+﻿import os
+import aiosqlite
 
 DB_PATH = "bot.db"
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name, "1" if default else "0") or ("1" if default else "0")).strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off", ""):
+        return False
+    # Unknown values are treated as default (safer for old/non-boolean config values).
+    return bool(default)
+
+
+TREASURY_AUTODEDUCT = _env_flag("TREASURY_AUTODEDUCT", default=True)
+STRICT_TREASURY = _env_flag("STRICT_TREASURY", default=False)
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -420,8 +435,21 @@ class Database:
         if holding < int(shares):
             raise ValueError("Member does not have enough shares to sell.")
 
+        if TREASURY_AUTODEDUCT and STRICT_TREASURY:
+            tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
+            trow = await tcur.fetchone()
+            treasury_amount = int(trow[0]) if trow else 0
+            if treasury_amount < int(payout_amount):
+                raise ValueError("Treasury too low for this payout.")
+
         await self._begin()
         try:
+            if TREASURY_AUTODEDUCT:
+                await self.conn.execute(
+                    "UPDATE treasury SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                    (int(payout_amount), int(handled_by) if handled_by is not None else None),
+                )
+
             await self.conn.execute(
                 "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
                 (int(shares), int(requester_id)),
