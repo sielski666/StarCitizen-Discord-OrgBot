@@ -32,10 +32,9 @@ def _expected_tier_role_id(level: int) -> int | None:
 
 def jobs_poster_or_admin():
     async def predicate(ctx: discord.ApplicationContext):
-        author = ctx.author
-        if not isinstance(author, discord.Member):
-            return False
-        return is_admin_member(author) or is_jobs_admin(author)
+        # Allow all guild members to post jobs.
+        # Admin/JOBS_ADMIN restrictions still apply to admin actions (cancel/reopen/etc).
+        return isinstance(ctx.author, discord.Member)
     return commands.check(predicate)
 
 
@@ -62,7 +61,7 @@ def _status_text(status: str) -> str:
         "open": "Open",
         "claimed": "Claimed",
         "completed": "Completed",
-        "paid": "Paid",
+        "paid": "Org Points Rewarded",
         "cancelled": "Cancelled",
     }.get(status, status)
 
@@ -72,7 +71,7 @@ def _status_badge(status: str) -> str:
         "open": "🟦 OPEN",
         "claimed": "🟨 CLAIMED",
         "completed": "🟧 COMPLETED",
-        "paid": "🟩 PAID",
+        "paid": "🟩 ORG POINTS REWARDED",
         "cancelled": "🟥 CANCELLED",
     }.get(status, status.upper())
 
@@ -131,7 +130,7 @@ def _job_embed(
     e.set_thumbnail(url="attachment://org_logo.png")
 
     e.add_field(name="Status", value=_status_badge(status), inline=True)
-    e.add_field(name="Reward", value=f"`{reward:,}` **Org Credits**", inline=True)
+    e.add_field(name="Reward", value=f"`{reward:,}` **Org Points**", inline=True)
     e.add_field(name="Tier", value=_tier_display(int(min_level)), inline=True)
 
     e.add_field(name="Minimum Level", value=f"`{int(min_level)}+`", inline=True)
@@ -257,19 +256,38 @@ class JobTierSelectView(discord.ui.View):
         self.select.callback = self._on_select  # type: ignore
         self.add_item(self.select)
 
+    def mark_selected(self, level: int):
+        try:
+            self.select.disabled = True
+            self.select.placeholder = f"Tier selected ✅ ({_tier_display(int(level))})"
+        except Exception:
+            logger.debug("Failed to update tier select placeholder", exc_info=True)
+
     async def _on_select(self, interaction: discord.Interaction):
         try:
             level = int(self.select.values[0])
         except Exception:
             level = 0
-        await interaction.response.send_modal(JobPostModal(self.cog, min_level=level))
+
+        self.mark_selected(level)
+        await interaction.response.send_modal(
+            JobPostModal(self.cog, min_level=level, source_message=interaction.message, source_view=self)
+        )
 
 
 class JobPostModal(discord.ui.Modal):
-    def __init__(self, cog: "JobsCog", min_level: int):
+    def __init__(
+        self,
+        cog: "JobsCog",
+        min_level: int,
+        source_message: discord.Message | None = None,
+        source_view: JobTierSelectView | None = None,
+    ):
         super().__init__(title="Create Job")
         self.cog = cog
         self.min_level = int(min_level)
+        self.source_message = source_message
+        self.source_view = source_view
 
         self.job_title = discord.ui.InputText(label="Title", placeholder="e.g. Shred and Earn", max_length=80)
         self.job_description = discord.ui.InputText(
@@ -322,6 +340,15 @@ class JobPostModal(discord.ui.Modal):
 
             await interaction.followup.send(f"Job #{job_id} posted. Tier: {_tier_display(self.min_level)}", ephemeral=True)
 
+            if self.source_message and self.source_view:
+                try:
+                    await self.source_message.edit(
+                        content=f"Tier selected ✅ ({_tier_display(self.min_level)}). Job #{job_id} created.",
+                        view=self.source_view,
+                    )
+                except Exception:
+                    logger.debug("Failed to update tier selection ephemeral message", exc_info=True)
+
         except Exception:
             logger.exception("Job post modal callback failed")
             try:
@@ -366,9 +393,7 @@ class JobAcceptPersistentView(discord.ui.View):
 
         row = await self.db.get_job(int(jid))
         if not row:
-            button.label = "Accepted"
-            button.disabled = True
-            await interaction.message.edit(view=self)
+            await interaction.message.edit(view=None)
             return await interaction.followup.send("Job not found.", ephemeral=True)
 
         (
@@ -387,16 +412,12 @@ class JobAcceptPersistentView(discord.ui.View):
         ) = row
 
         if status != "open":
-            button.label = "Accepted"
-            button.disabled = True
-            await interaction.message.edit(view=self)
+            await interaction.message.edit(view=None)
             return await interaction.followup.send(f"This job is no longer open (status: {_status_text(status)}).", ephemeral=True)
 
         claimed = await self.db.claim_job(job_id_db, claimed_by=interaction.user.id)
         if not claimed:
-            button.label = "Accepted"
-            button.disabled = True
-            await interaction.message.edit(view=self)
+            await interaction.message.edit(view=None)
             return await interaction.followup.send("Someone else accepted it first.", ephemeral=True)
 
         thread = await interaction.message.create_thread(
@@ -407,11 +428,8 @@ class JobAcceptPersistentView(discord.ui.View):
 
         updated_embed = _job_embed(job_id_db, title, description, int(reward), "claimed", created_by, interaction.user.id, min_level=min_level)
 
-        button.label = "Accepted"
-        button.disabled = True
-
         files = _logo_files()
-        await interaction.message.edit(embed=updated_embed, view=self, files=files if files else None)
+        await interaction.message.edit(embed=updated_embed, view=None, files=files if files else None)
 
         await thread.send(
             f"✅ **Accepted** by {interaction.user.mention}\n"
@@ -484,16 +502,16 @@ class JobsCog(commands.Cog):
         if thread_id:
             try:
                 thread = ctx.guild.get_thread(thread_id) or await ctx.guild.fetch_channel(thread_id)
-                await thread.send("🧾 Job marked **COMPLETED**. Awaiting finance payout.")
+                await thread.send("🧾 Job marked **COMPLETED**. Awaiting finance confirmation.")
             except Exception:
                 pass
 
         await ctx.respond(f"Job #{jid} marked completed.", ephemeral=True)
 
-    # PAYOUT (Finance OR Admin)
-    @jobs.command(name="payout", description="(Finance/Admin) Pay out a completed job")
+    # JOBCONFIRM (Finance OR Admin)
+    @jobs.command(name="confirm", description="(Finance/Admin) Confirm completed job and reward Org Points")
     @finance_or_admin()
-    async def payout(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+    async def confirm(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
         row = await self.db.get_job(int(job_id))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
@@ -514,11 +532,11 @@ class JobsCog(commands.Cog):
         ) = row
 
         if status != "completed":
-            return await ctx.respond(f"Job must be COMPLETED before payout (status: {_status_text(status)}).", ephemeral=True)
+            return await ctx.respond(f"Job must be COMPLETED before confirmation (status: {_status_text(status)}).", ephemeral=True)
         if not claimed_by:
-            return await ctx.respond("No claimer to pay.", ephemeral=True)
+            return await ctx.respond("No claimer to reward.", ephemeral=True)
 
-        # payout credits
+        # Reward Org Points
         await self.db.add_balance(
             discord_id=int(claimed_by),
             amount=int(reward),
@@ -580,11 +598,11 @@ class JobsCog(commands.Cog):
             try:
                 thread = ctx.guild.get_thread(thread_id) or await ctx.guild.fetch_channel(thread_id)
                 extra = f"\n+`{rep_added}` Reputation" if rep_added else ""
-                await thread.send(f"💰 Payout sent: `{reward:,} Org Credits` to <@{claimed_by}>. Status: **PAID**.{extra}")
+                await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{claimed_by}>. Status: **ORG POINTS REWARDED**.{extra}")
             except Exception:
                 pass
 
-        await ctx.respond(f"Paid Job #{jid}.", ephemeral=True)
+        await ctx.respond(f"Job #{jid} confirmed. Org Points rewarded.", ephemeral=True)
 
     # CANCEL (Admin ONLY)
     @jobs.command(name="cancel", description="(Admin) Cancel a job (locks/archives its thread)")

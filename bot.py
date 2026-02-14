@@ -1,4 +1,6 @@
 import os
+import signal
+import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -61,4 +63,49 @@ bot.add_cog(FinanceCog(bot, db))  # ✅ finance dashboard
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN missing in .env")
 
-bot.run(TOKEN)
+
+async def _graceful_shutdown():
+    try:
+        await bot.close()
+    except Exception:
+        pass
+
+    try:
+        await db.close()
+    except Exception:
+        pass
+
+
+async def _main():
+    stop_event = asyncio.Event()
+
+    def _handle_stop(sig_name: str):
+        print(f"Received {sig_name}; shutting down gracefully...")
+        stop_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _handle_stop, sig.name)
+        except NotImplementedError:
+            # Windows/limited environments may not support signal handlers this way.
+            pass
+
+    runner = asyncio.create_task(bot.start(TOKEN))
+    stopper = asyncio.create_task(stop_event.wait())
+
+    done, pending = await asyncio.wait({runner, stopper}, return_when=asyncio.FIRST_COMPLETED)
+
+    if stopper in done and not runner.done():
+        await _graceful_shutdown()
+
+    for task in pending:
+        task.cancel()
+
+    # Surface startup/runtime failures if bot task exited unexpectedly.
+    if runner.done() and runner.exception() is not None:
+        raise runner.exception()
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
