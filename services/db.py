@@ -228,6 +228,16 @@ class Database:
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
+    async def get_treasury_meta(self):
+        cur = await self.conn.execute("SELECT amount, updated_by, updated_at FROM treasury WHERE id=1")
+        row = await cur.fetchone()
+        if not row:
+            return 0, None, None
+        amount = int(row[0]) if row[0] is not None else 0
+        updated_by = int(row[1]) if row[1] is not None else None
+        updated_at = str(row[2]) if row[2] is not None else None
+        return amount, updated_by, updated_at
+
     async def set_treasury(self, amount: int, updated_by: int | None = None):
         await self.conn.execute(
             "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
