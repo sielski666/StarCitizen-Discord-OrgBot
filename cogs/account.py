@@ -17,6 +17,7 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 SHARE_PRICE = 100_000  # Org Credits per share (buy)
 SHARE_CASHOUT_AUEC_PER_SHARE = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(SHARE_PRICE)) or SHARE_PRICE)
 FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
+TREASURY_CHANNEL_ID = int(os.getenv("TREASURY_CHANNEL_ID", os.getenv("FINANCE_CHANNEL_ID", "0")) or "0")
 SHARES_SELL_CHANNEL_ID = int(os.getenv("SHARES_SELL_CHANNEL_ID", "0") or "0")
 
 # Rep / Level / Tier config
@@ -266,6 +267,20 @@ class CashoutPersistentView(discord.ui.View):
                 await th.edit(archived=True, locked=True)
             except Exception:
                 logger.debug("Failed to update paid thread state request_id=%s", rid, exc_info=True)
+
+        if interaction.guild and TREASURY_CHANNEL_ID:
+            try:
+                treasury_channel = interaction.guild.get_channel(int(TREASURY_CHANNEL_ID))
+                if treasury_channel is not None:
+                    await treasury_channel.send(
+                        f"🏦 Cash-out paid: **#{rid}**\n"
+                        f"Requester: <@{requester_id}>\n"
+                        f"Handled by: {interaction.user.mention}\n"
+                        f"Payout: `{payout_amount:,} aUEC`\n"
+                        f"Treasury remaining: `{treasury_left:,} aUEC`"
+                    )
+            except Exception:
+                logger.debug("Failed sending treasury payout update request_id=%s", rid, exc_info=True)
 
         await interaction.followup.send("Marked paid and finalized shares.", ephemeral=True)
 
