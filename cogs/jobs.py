@@ -283,21 +283,39 @@ class JobPostModal(discord.ui.Modal):
         min_level: int,
         source_message: discord.Message | None = None,
         source_view: JobTierSelectView | None = None,
+        prefill_title: str | None = None,
+        prefill_description: str | None = None,
+        prefill_reward: int | None = None,
+        category: str | None = None,
+        template_id: int | None = None,
     ):
         super().__init__(title="Create Job")
         self.cog = cog
         self.min_level = int(min_level)
         self.source_message = source_message
         self.source_view = source_view
+        self.category = category
+        self.template_id = template_id
 
-        self.job_title = discord.ui.InputText(label="Title", placeholder="e.g. Shred and Earn", max_length=80)
+        self.job_title = discord.ui.InputText(
+            label="Title",
+            placeholder="e.g. Shred and Earn",
+            value=(prefill_title or "")[:80] if prefill_title else None,
+            max_length=80,
+        )
         self.job_description = discord.ui.InputText(
             label="Description",
             placeholder="Explain what needs doing, where, requirements, etc.",
+            value=(prefill_description or "")[:1000] if prefill_description else None,
             style=discord.InputTextStyle.long,
             max_length=1000,
         )
-        self.job_reward = discord.ui.InputText(label="Reward (Org Credits)", placeholder="e.g. 1000000", max_length=12)
+        self.job_reward = discord.ui.InputText(
+            label="Reward (Org Credits)",
+            placeholder="e.g. 1000000",
+            value=(str(int(prefill_reward)) if prefill_reward is not None else None),
+            max_length=12,
+        )
 
         self.add_item(self.job_title)
         self.add_item(self.job_description)
@@ -344,6 +362,8 @@ class JobPostModal(discord.ui.Modal):
                     description=desc,
                     reward=reward,
                     created_by=interaction.user.id,
+                    category=self.category,
+                    template_id=self.template_id,
                 )
             except ValueError as e:
                 await msg.delete()
@@ -635,7 +655,45 @@ class JobsCog(commands.Cog):
 
     @jobs.command(name="post", description="Create a job (tier dropdown + form)")
     @jobs_poster_or_admin()
-    async def post(self, ctx: discord.ApplicationContext):
+    async def post(
+        self,
+        ctx: discord.ApplicationContext,
+        template: discord.Option(str, required=False, description="Optional template name") = None,
+    ):
+        if template:
+            row = await self.db.get_job_template_by_name(str(template))
+            if not row:
+                return await ctx.respond(f"Template `{template}` not found.", ephemeral=True)
+
+            (
+                template_id,
+                template_name,
+                default_title,
+                default_description,
+                default_reward_min,
+                default_reward_max,
+                default_tier_required,
+                category,
+                active,
+            ) = row
+
+            if int(active) != 1:
+                return await ctx.respond(f"Template `{template_name}` is inactive.", ephemeral=True)
+
+            default_reward = int(default_reward_min or 0) or int(default_reward_max or 0) or 1000
+            await ctx.send_modal(
+                JobPostModal(
+                    self,
+                    min_level=int(default_tier_required or 0),
+                    prefill_title=str(default_title),
+                    prefill_description=str(default_description),
+                    prefill_reward=int(default_reward),
+                    category=(str(category) if category else None),
+                    template_id=int(template_id),
+                )
+            )
+            return
+
         view = JobTierSelectView(self)
         await ctx.respond("Choose the job tier:", view=view, ephemeral=True)
 

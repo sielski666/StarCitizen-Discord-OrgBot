@@ -104,6 +104,18 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   reference_id TEXT,
   notes TEXT
 );
+
+CREATE TABLE IF NOT EXISTS job_templates (
+  template_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  default_title TEXT NOT NULL,
+  default_description TEXT NOT NULL,
+  default_reward_min INTEGER NOT NULL DEFAULT 0,
+  default_reward_max INTEGER NOT NULL DEFAULT 0,
+  default_tier_required INTEGER NOT NULL DEFAULT 0,
+  category TEXT,
+  active INTEGER NOT NULL DEFAULT 1
+);
 """
 
 
@@ -443,7 +455,17 @@ class Database:
         row = await cur.fetchone()
         return int(row[0]) if row and row[0] is not None else 0
 
-    async def create_job(self, channel_id: int, message_id: int, title: str, description: str, reward: int, created_by: int) -> int:
+    async def create_job(
+        self,
+        channel_id: int,
+        message_id: int,
+        title: str,
+        description: str,
+        reward: int,
+        created_by: int,
+        category: str | None = None,
+        template_id: int | None = None,
+    ) -> int:
         reward_i = int(reward)
 
         await self._begin()
@@ -458,10 +480,20 @@ class Database:
 
             cur = await self.conn.execute(
                 """
-                INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by, escrow_amount, escrow_status, funded)
-                VALUES(?,?,?,?,?,'open',?,?, 'reserved', 1)
+                INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by, escrow_amount, escrow_status, funded, category, template_id)
+                VALUES(?,?,?,?,?,'open',?,?, 'reserved', 1, ?, ?)
                 """,
-                (int(channel_id), int(message_id), str(title), str(description), reward_i, int(created_by), reward_i),
+                (
+                    int(channel_id),
+                    int(message_id),
+                    str(title),
+                    str(description),
+                    reward_i,
+                    int(created_by),
+                    reward_i,
+                    (str(category).strip() if category else None),
+                    (int(template_id) if template_id is not None else None),
+                ),
             )
             job_id = int(cur.lastrowid)
 
@@ -489,6 +521,20 @@ class Database:
             FROM jobs WHERE job_id=?
             """,
             (int(job_id),),
+        )
+        return await cur.fetchone()
+
+    async def get_job_template_by_name(self, name: str):
+        cur = await self.conn.execute(
+            """
+            SELECT template_id, name, default_title, default_description,
+                   default_reward_min, default_reward_max, default_tier_required,
+                   category, active
+            FROM job_templates
+            WHERE lower(name)=lower(?)
+            LIMIT 1
+            """,
+            (str(name).strip(),),
         )
         return await cur.fetchone()
 
