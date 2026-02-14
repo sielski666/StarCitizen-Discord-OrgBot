@@ -685,10 +685,6 @@ class AccountCog(commands.Cog):
     async def sellshares(self, ctx: discord.ApplicationContext, shares: int):
         await ctx.defer(ephemeral=True)
 
-        required_channel_id = SHARES_SELL_CHANNEL_ID or FINANCE_CHANNEL_ID
-        if required_channel_id and (ctx.channel is None or int(ctx.channel.id) != int(required_channel_id)):
-            return await ctx.followup.send(f"Use this command in <#{required_channel_id}>.", ephemeral=True)
-
         if shares < 1:
             return await ctx.followup.send("Shares must be at least 1.", ephemeral=True)
 

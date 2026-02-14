@@ -13,18 +13,17 @@ class TreasuryCog(commands.Cog):
         self.bot = bot
         self.db = db
 
-    def _in_treasury_channel(self, ctx: discord.ApplicationContext) -> bool:
-        if TREASURY_CHANNEL_ID <= 0:
-            return True
-        return bool(ctx.channel and int(ctx.channel.id) == int(TREASURY_CHANNEL_ID))
+    def _target_channel(self, ctx: discord.ApplicationContext):
+        if TREASURY_CHANNEL_ID and ctx.guild:
+            ch = ctx.guild.get_channel(TREASURY_CHANNEL_ID)
+            if ch is not None:
+                return ch
+        return ctx.channel
 
     treasury = discord.SlashCommandGroup("treasury", "Treasury commands (org aUEC pool)")
 
     @treasury.command(name="status", description="View the current treasury amount")
     async def status(self, ctx: discord.ApplicationContext):
-        if not self._in_treasury_channel(ctx):
-            return await ctx.respond(f"Use this command in <#{TREASURY_CHANNEL_ID}>.", ephemeral=True)
-
         amount, updated_by, updated_at = await self.db.get_treasury_meta()
 
         embed = discord.Embed(
@@ -41,13 +40,16 @@ class TreasuryCog(commands.Cog):
         embed.add_field(name="Last Updated At", value=f"`{updated_at}`" if updated_at else "—", inline=True)
         embed.set_footer(text="Treasury is manual (no Star Citizen API). Used for cash-out safety checks.")
 
+        post_channel = self._target_channel(ctx)
+        if post_channel is not None:
+            await post_channel.send(embed=embed)
+            if ctx.channel and post_channel.id != ctx.channel.id:
+                return await ctx.respond(f"Posted treasury status in <#{post_channel.id}>.", ephemeral=True)
+
         await ctx.respond(embed=embed, ephemeral=True)
 
     @treasury.command(name="set", description="(Finance/Admin) Set the treasury amount (aUEC)")
     async def set(self, ctx: discord.ApplicationContext, amount: int):
-        if not self._in_treasury_channel(ctx):
-            return await ctx.respond(f"Use this command in <#{TREASURY_CHANNEL_ID}>.", ephemeral=True)
-
         if not isinstance(ctx.author, discord.Member) or not is_finance_or_admin(ctx.author):
             return await ctx.respond("Only Finance/Admin can set treasury.", ephemeral=True)
 
@@ -62,5 +64,11 @@ class TreasuryCog(commands.Cog):
             colour=discord.Colour.green(),
         )
         embed.set_footer(text="Remember: this is a manual org pool value.")
+
+        post_channel = self._target_channel(ctx)
+        if post_channel is not None:
+            await post_channel.send(embed=embed)
+            if ctx.channel and post_channel.id != ctx.channel.id:
+                return await ctx.respond(f"Posted treasury update in <#{post_channel.id}>.", ephemeral=True)
 
         await ctx.respond(embed=embed, ephemeral=True)
