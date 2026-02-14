@@ -68,19 +68,33 @@ pip install -r requirements.txt
 
 ### 3) Configure environment
 
-Copy `.env.example` (or `.env(template)`) to `.env` and fill values:
+Copy `.env.example` (or `.env(template)`) to `.env`.
 
-- `DISCORD_TOKEN`
+**Bot token lives in `.env`** and should be set manually:
+
+- `DISCORD_TOKEN=...`
+
+Then configure guild/roles/channels either by:
+
+- editing `.env` directly, or
+- running `/setup start` in Discord (admin only)
+
+Required keys used by the bot:
+
 - `GUILD_ID`
 - `FINANCE_ROLE_ID`
 - `JOBS_ADMIN_ROLE_ID`
-- `FINANCE_CHANNEL_ID`
-- economy/tier values:
-  - `SHARE_CASHOUT_AUEC_PER_SHARE`
-  - `LEVEL_PER_REP`
-  - `REP_PER_JOB_PAYOUT`
-  - `JOB_TIERS`
-  - `LEVEL_ROLE_MAP`
+- `JOBS_CHANNEL_ID`
+- `TREASURY_CHANNEL_ID`
+- `SHARES_SELL_CHANNEL_ID`
+- `FINANCE_CHANNEL_ID` (compat alias; usually same as `TREASURY_CHANNEL_ID`)
+
+Economy/tier values:
+- `SHARE_CASHOUT_AUEC_PER_SHARE`
+- `LEVEL_PER_REP`
+- `REP_PER_JOB_PAYOUT`
+- `JOB_TIERS`
+- `LEVEL_ROLE_MAP`
 
 ### 4) Run
 

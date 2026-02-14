@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import discord
@@ -16,12 +15,6 @@ class SetupModal(discord.ui.Modal):
 
         env = cog._read_env()
 
-        self.token = discord.ui.InputText(
-            label="DISCORD_TOKEN",
-            value=env.get("DISCORD_TOKEN", ""),
-            placeholder="Bot token",
-            max_length=200,
-        )
         self.guild_id = discord.ui.InputText(
             label="GUILD_ID",
             value=env.get("GUILD_ID", ""),
@@ -55,7 +48,6 @@ class SetupModal(discord.ui.Modal):
             max_length=200,
         )
 
-        self.add_item(self.token)
         self.add_item(self.guild_id)
         self.add_item(self.finance_role_id)
         self.add_item(self.jobs_admin_role_id)
@@ -66,13 +58,9 @@ class SetupModal(discord.ui.Modal):
         if not member or not is_admin_member(member):
             return await interaction.response.send_message("Admin only.", ephemeral=True)
 
-        token = (self.token.value or "").strip()
         guild_id = (self.guild_id.value or "").strip()
         finance_role_id = (self.finance_role_id.value or "").strip()
         jobs_admin_role_id = (self.jobs_admin_role_id.value or "").strip()
-
-        if not token:
-            return await interaction.response.send_message("DISCORD_TOKEN is required.", ephemeral=True)
 
         numeric_fields = {
             "GUILD_ID": guild_id,
@@ -120,7 +108,6 @@ class SetupModal(discord.ui.Modal):
         jobs_channel_id, treasury_channel_id, shares_sell_channel_id = channels
 
         updates = {
-            "DISCORD_TOKEN": token,
             "GUILD_ID": guild_id,
             "FINANCE_ROLE_ID": finance_role_id,
             "JOBS_ADMIN_ROLE_ID": jobs_admin_role_id,
@@ -138,7 +125,7 @@ class SetupModal(discord.ui.Modal):
             f"Jobs: <#{jobs_channel_id}>\n"
             f"Treasury: <#{treasury_channel_id}>\n"
             f"Shares Sell: <#{shares_sell_channel_id}>\n"
-            "Run: `sudo systemctl restart starcitizen-orgbot` to apply token/config updates.",
+            "Run: `sudo systemctl restart starcitizen-orgbot` to apply config updates.",
             ephemeral=True,
         )
 
@@ -215,7 +202,7 @@ class SetupCog(commands.Cog):
 
         ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    @setup_group.command(name="start", description="Open setup form (token, guild, roles, channels)")
+    @setup_group.command(name="start", description="Open setup form (guild, roles, channels)")
     async def setup_start(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
         if not member or not is_admin_member(member):
