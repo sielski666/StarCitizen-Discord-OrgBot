@@ -336,14 +336,18 @@ class JobPostModal(discord.ui.Modal):
 
             msg = await channel.send(embed=placeholder)
 
-            job_id = await self.cog.db.create_job(
-                channel_id=channel.id,
-                message_id=msg.id,
-                title=title,
-                description=desc,
-                reward=reward,
-                created_by=interaction.user.id,
-            )
+            try:
+                job_id = await self.cog.db.create_job(
+                    channel_id=channel.id,
+                    message_id=msg.id,
+                    title=title,
+                    description=desc,
+                    reward=reward,
+                    created_by=interaction.user.id,
+                )
+            except ValueError as e:
+                await msg.delete()
+                return await interaction.followup.send(str(e), ephemeral=True)
 
             embed = _job_embed(job_id, title, desc, reward, "open", interaction.user.id, None, min_level=self.min_level)
 
@@ -562,6 +566,14 @@ class JobWorkflowView(discord.ui.View):
         if not claimed_by:
             return await interaction.followup.send("No claimer to reward.", ephemeral=True)
 
+        try:
+            ok = await self.db.mark_paid(job_id_db)
+        except ValueError as e:
+            return await interaction.followup.send(f"Cannot confirm job: {e}", ephemeral=True)
+
+        if not ok:
+            return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
+
         await self.db.add_balance(
             discord_id=int(claimed_by),
             amount=int(reward),
@@ -592,10 +604,6 @@ class JobWorkflowView(discord.ui.View):
                     member_obj = None
             if member_obj is not None:
                 await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
-
-        ok = await self.db.mark_paid(job_id_db)
-        if not ok:
-            return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
 
         min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
         updated = _job_embed(job_id_db, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
@@ -714,6 +722,14 @@ class JobsCog(commands.Cog):
         if not claimed_by:
             return await ctx.respond("No claimer to reward.", ephemeral=True)
 
+        try:
+            ok = await self.db.mark_paid(jid)
+        except ValueError as e:
+            return await ctx.respond(f"Cannot confirm job: {e}", ephemeral=True)
+
+        if not ok:
+            return await ctx.respond("Could not mark as paid (maybe already paid).", ephemeral=True)
+
         # Reward Org Points
         await self.db.add_balance(
             discord_id=int(claimed_by),
@@ -751,10 +767,6 @@ class JobsCog(commands.Cog):
         # Sync tier roles + DM if rank-up
         if member_obj and before_level is not None:
             await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
-
-        ok = await self.db.mark_paid(jid)
-        if not ok:
-            return await ctx.respond("Could not mark as paid (maybe already paid).", ephemeral=True)
 
         # Update original job message
         try:

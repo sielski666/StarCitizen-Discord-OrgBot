@@ -116,7 +116,24 @@ class Database:
         self.conn = await aiosqlite.connect(self.path)
         await self.conn.executescript(SCHEMA)
         await self.conn.execute("INSERT OR IGNORE INTO treasury(id, amount) VALUES(1, 0)")
+        await self._ensure_jobs_columns()
         await self.conn.commit()
+
+    async def _ensure_jobs_columns(self):
+        cur = await self.conn.execute("PRAGMA table_info(jobs)")
+        rows = await cur.fetchall()
+        existing = {str(r[1]) for r in rows}
+
+        if "escrow_amount" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN escrow_amount INTEGER NOT NULL DEFAULT 0")
+        if "escrow_status" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN escrow_status TEXT NOT NULL DEFAULT 'none'")
+        if "funded" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN funded INTEGER NOT NULL DEFAULT 0")
+        if "category" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN category TEXT")
+        if "template_id" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN template_id INTEGER")
 
     async def close(self):
         if self.conn:
@@ -419,16 +436,50 @@ class Database:
     # =========================
     # JOBS
     # =========================
-    async def create_job(self, channel_id: int, message_id: int, title: str, description: str, reward: int, created_by: int) -> int:
+    async def get_reserved_job_escrow(self) -> int:
         cur = await self.conn.execute(
-            """
-            INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by)
-            VALUES(?,?,?,?,?,'open',?)
-            """,
-            (int(channel_id), int(message_id), str(title), str(description), int(reward), int(created_by)),
+            "SELECT COALESCE(SUM(escrow_amount), 0) FROM jobs WHERE escrow_status='reserved'"
         )
-        await self.conn.commit()
-        return int(cur.lastrowid)
+        row = await cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    async def create_job(self, channel_id: int, message_id: int, title: str, description: str, reward: int, created_by: int) -> int:
+        reward_i = int(reward)
+
+        await self._begin()
+        try:
+            current_treasury = await self.get_treasury()
+            reserved = await self.get_reserved_job_escrow()
+            available = int(current_treasury) - int(reserved)
+            if available < reward_i:
+                raise ValueError(
+                    f"Insufficient available treasury for this job. Available: {available:,} aUEC, required: {reward_i:,} aUEC."
+                )
+
+            cur = await self.conn.execute(
+                """
+                INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by, escrow_amount, escrow_status, funded)
+                VALUES(?,?,?,?,?,'open',?,?, 'reserved', 1)
+                """,
+                (int(channel_id), int(message_id), str(title), str(description), reward_i, int(created_by), reward_i),
+            )
+            job_id = int(cur.lastrowid)
+
+            await self.add_ledger_entry(
+                entry_type="escrow_reserved",
+                amount=reward_i,
+                from_account="treasury_available",
+                to_account=f"job_escrow:{job_id}",
+                reference_type="job",
+                reference_id=str(job_id),
+                notes="Reserved treasury for new job",
+            )
+
+            await self._commit()
+            return job_id
+        except Exception:
+            await self._rollback()
+            raise
 
     async def get_job(self, job_id: int):
         cur = await self.conn.execute(
@@ -486,15 +537,53 @@ class Database:
         await self._begin()
         try:
             cur = await self.conn.execute(
+                "SELECT status, reward, escrow_amount, escrow_status FROM jobs WHERE job_id=?",
+                (int(job_id),),
+            )
+            row = await cur.fetchone()
+            if not row:
+                await self._rollback()
+                return False
+
+            status, reward, escrow_amount, escrow_status = str(row[0]), int(row[1]), int(row[2] or 0), str(row[3] or "none")
+            if status != "completed":
+                await self._rollback()
+                return False
+
+            payout_amount = int(escrow_amount or reward)
+            if TREASURY_AUTODEDUCT and payout_amount > 0:
+                tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
+                trow = await tcur.fetchone()
+                treasury_amount = int(trow[0]) if trow else 0
+                if treasury_amount < payout_amount:
+                    raise ValueError("Treasury too low for this payout.")
+                await self.conn.execute(
+                    "UPDATE treasury SET amount = amount - ?, updated_by=NULL, updated_at=datetime('now') WHERE id=1",
+                    (int(payout_amount),),
+                )
+
+            await self.conn.execute(
                 """
                 UPDATE jobs
-                SET status='paid', updated_at=datetime('now')
+                SET status='paid', escrow_status='released', updated_at=datetime('now')
                 WHERE job_id=? AND status='completed'
                 """,
                 (int(job_id),),
             )
+
+            if escrow_status == "reserved" and payout_amount > 0:
+                await self.add_ledger_entry(
+                    entry_type="escrow_released",
+                    amount=int(payout_amount),
+                    from_account=f"job_escrow:{int(job_id)}",
+                    to_account="settled",
+                    reference_type="job",
+                    reference_id=str(int(job_id)),
+                    notes="Released reserved job escrow on confirm",
+                )
+
             await self._commit()
-            return cur.rowcount == 1
+            return True
         except Exception:
             await self._rollback()
             raise
@@ -503,15 +592,41 @@ class Database:
         await self._begin()
         try:
             cur = await self.conn.execute(
+                "SELECT status, escrow_amount, escrow_status FROM jobs WHERE job_id=?",
+                (int(job_id),),
+            )
+            row = await cur.fetchone()
+            if not row:
+                await self._rollback()
+                return False
+
+            status, escrow_amount, escrow_status = str(row[0]), int(row[1] or 0), str(row[2] or "none")
+            if status in ("paid", "cancelled"):
+                await self._rollback()
+                return False
+
+            await self.conn.execute(
                 """
                 UPDATE jobs
-                SET status='cancelled', updated_at=datetime('now')
+                SET status='cancelled', escrow_status='released', updated_at=datetime('now')
                 WHERE job_id=? AND status NOT IN ('paid','cancelled')
                 """,
                 (int(job_id),),
             )
+
+            if escrow_status == "reserved" and int(escrow_amount) > 0:
+                await self.add_ledger_entry(
+                    entry_type="escrow_released",
+                    amount=int(escrow_amount),
+                    from_account=f"job_escrow:{int(job_id)}",
+                    to_account="treasury_available",
+                    reference_type="job",
+                    reference_id=str(int(job_id)),
+                    notes="Released reserved job escrow on cancel",
+                )
+
             await self._commit()
-            return cur.rowcount == 1
+            return True
         except Exception:
             await self._rollback()
             raise
