@@ -49,8 +49,9 @@ class SetupModal(discord.ui.Modal):
                     env.get("SHARES_SELL_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
                 ]
             ).strip(","),
-            placeholder="jobs_channel_id,treasury_channel_id,shares_sell_channel_id",
+            placeholder="Optional: leave blank to auto-create channels",
             style=discord.InputTextStyle.long,
+            required=False,
             max_length=200,
         )
 
@@ -82,10 +83,19 @@ class SetupModal(discord.ui.Modal):
             if not value.isdigit():
                 return await interaction.response.send_message(f"{key} must be numeric.", ephemeral=True)
 
-        parts = [p.strip() for p in (self.channel_ids.value or "").split(",")]
-        if len(parts) != 3 or not all((x == "" or x.isdigit()) for x in parts):
+        raw_channels = (self.channel_ids.value or "").strip()
+        if raw_channels == "":
+            parts = ["", "", ""]
+        else:
+            parts = [p.strip() for p in raw_channels.split(",")]
+            if len(parts) < 3:
+                parts.extend([""] * (3 - len(parts)))
+            elif len(parts) > 3:
+                parts = parts[:3]
+
+        if not all((x == "" or x.isdigit()) for x in parts):
             return await interaction.response.send_message(
-                "Channel IDs must be 3 values: jobs, treasury, shares (numeric or blank).",
+                "Channel IDs must be numeric when provided (jobs, treasury, shares).",
                 ephemeral=True,
             )
 
