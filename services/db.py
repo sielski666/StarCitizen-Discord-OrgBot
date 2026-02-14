@@ -16,6 +16,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 TREASURY_AUTODEDUCT = _env_flag("TREASURY_AUTODEDUCT", default=True)
 STRICT_TREASURY = _env_flag("STRICT_TREASURY", default=False)
+SHARE_CASHOUT_AUEC_PER_SHARE = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", "100000") or "100000")
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -91,6 +92,18 @@ CREATE TABLE IF NOT EXISTS transactions (
   reference TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS ledger_entries (
+  entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+  entry_type TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  from_account TEXT,
+  to_account TEXT,
+  reference_type TEXT,
+  reference_id TEXT,
+  notes TEXT
+);
 """
 
 
@@ -121,6 +134,87 @@ class Database:
             await self.conn.rollback()
         except Exception:
             pass
+
+    async def add_ledger_entry(
+        self,
+        entry_type: str,
+        amount: int,
+        from_account: str | None = None,
+        to_account: str | None = None,
+        reference_type: str | None = None,
+        reference_id: str | None = None,
+        notes: str | None = None,
+    ):
+        await self.conn.execute(
+            """
+            INSERT INTO ledger_entries(entry_type, amount, from_account, to_account, reference_type, reference_id, notes)
+            VALUES(?,?,?,?,?,?,?)
+            """,
+            (
+                str(entry_type),
+                int(amount),
+                str(from_account) if from_account is not None else None,
+                str(to_account) if to_account is not None else None,
+                str(reference_type) if reference_type is not None else None,
+                str(reference_id) if reference_id is not None else None,
+                str(notes) if notes is not None else None,
+            ),
+        )
+
+    async def get_ledger_reconcile(self):
+        """Return (current_treasury, ledger_treasury, drift, baseline_at)."""
+        current = await self.get_treasury()
+
+        cur = await self.conn.execute(
+            """
+            SELECT timestamp, amount
+            FROM ledger_entries
+            WHERE entry_type='treasury_set'
+            ORDER BY entry_id DESC
+            LIMIT 1
+            """
+        )
+        baseline = await cur.fetchone()
+
+        if baseline:
+            baseline_at = str(baseline[0])
+            ledger_treasury = int(baseline[1])
+            dcur = await self.conn.execute(
+                """
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN to_account='treasury' THEN amount
+                        WHEN from_account='treasury' THEN -amount
+                        ELSE 0
+                    END
+                ), 0)
+                FROM ledger_entries
+                WHERE timestamp > ? AND entry_type != 'treasury_set'
+                """,
+                (baseline_at,),
+            )
+            delta = await dcur.fetchone()
+            ledger_treasury += int(delta[0]) if delta and delta[0] is not None else 0
+        else:
+            baseline_at = None
+            dcur = await self.conn.execute(
+                """
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN to_account='treasury' THEN amount
+                        WHEN from_account='treasury' THEN -amount
+                        ELSE 0
+                    END
+                ), 0)
+                FROM ledger_entries
+                WHERE entry_type != 'treasury_set'
+                """
+            )
+            delta = await dcur.fetchone()
+            ledger_treasury = int(delta[0]) if delta and delta[0] is not None else 0
+
+        drift = int(current) - int(ledger_treasury)
+        return int(current), int(ledger_treasury), int(drift), baseline_at
 
     async def ensure_member(self, discord_id: int):
         await self.conn.execute(
@@ -162,6 +256,16 @@ class Database:
                 "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
                 (int(discord_id), str(tx_type), int(amount), 0, 0, reference),
             )
+            if str(tx_type) == "payout" and int(amount) > 0:
+                await self.add_ledger_entry(
+                    entry_type="job_payout",
+                    amount=int(amount),
+                    from_account="treasury",
+                    to_account=f"wallet:{int(discord_id)}",
+                    reference_type="job",
+                    reference_id=str(reference or ""),
+                    notes="Job payout",
+                )
             await self._commit()
         except Exception:
             await self._rollback()
@@ -202,6 +306,15 @@ class Database:
             await self.conn.execute(
                 "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
                 (int(discord_id), "buy_shares", -int(cost), int(shares_delta), 0, reference),
+            )
+            await self.add_ledger_entry(
+                entry_type="shares_bought",
+                amount=int(cost),
+                from_account=f"wallet:{int(discord_id)}",
+                to_account="treasury",
+                reference_type="shares",
+                reference_id=str(reference or ""),
+                notes=f"Bought {int(shares_delta)} shares",
             )
             await self._commit()
         except Exception:
@@ -254,11 +367,26 @@ class Database:
         return amount, updated_by, updated_at
 
     async def set_treasury(self, amount: int, updated_by: int | None = None):
-        await self.conn.execute(
-            "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
-            (int(amount), int(updated_by) if updated_by is not None else None),
-        )
-        await self.conn.commit()
+        current = await self.get_treasury()
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                (int(amount), int(updated_by) if updated_by is not None else None),
+            )
+            await self.add_ledger_entry(
+                entry_type="treasury_set",
+                amount=int(amount),
+                from_account=f"actor:{int(updated_by)}" if updated_by is not None else None,
+                to_account="treasury",
+                reference_type="treasury",
+                reference_id="manual-set",
+                notes=f"Manual set from {int(current)} to {int(amount)}",
+            )
+            await self._commit()
+        except Exception:
+            await self._rollback()
+            raise
 
     async def adjust_treasury(self, delta: int, updated_by: int | None = None) -> int:
         cur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
@@ -267,12 +395,26 @@ class Database:
         new_amount = current + int(delta)
         if new_amount < 0:
             raise ValueError("Treasury cannot go negative.")
-        await self.conn.execute(
-            "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
-            (int(new_amount), int(updated_by) if updated_by is not None else None),
-        )
-        await self.conn.commit()
-        return int(new_amount)
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                (int(new_amount), int(updated_by) if updated_by is not None else None),
+            )
+            await self.add_ledger_entry(
+                entry_type="treasury_adjust",
+                amount=abs(int(delta)),
+                from_account=("treasury" if int(delta) < 0 else f"actor:{int(updated_by)}" if updated_by is not None else "external"),
+                to_account=("treasury" if int(delta) > 0 else f"actor:{int(updated_by)}" if updated_by is not None else "external"),
+                reference_type="treasury",
+                reference_id="manual-adjust",
+                notes=f"Treasury adjusted by {int(delta)}",
+            )
+            await self._commit()
+            return int(new_amount)
+        except Exception:
+            await self._rollback()
+            raise
 
     # =========================
     # JOBS
@@ -386,6 +528,15 @@ class Database:
             "UPDATE shares_escrow SET locked_shares = locked_shares + ? WHERE discord_id=?",
             (int(shares), int(discord_id)),
         )
+        await self.add_ledger_entry(
+            entry_type="escrow_reserved",
+            amount=int(shares),
+            from_account=f"shares:{int(discord_id)}",
+            to_account=f"escrow:{int(discord_id)}",
+            reference_type="cashout",
+            reference_id=None,
+            notes="Shares locked for cashout",
+        )
         await self.conn.commit()
 
     async def unlock_shares(self, discord_id: int, shares: int):
@@ -396,6 +547,16 @@ class Database:
             "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
             (int(to_unlock), int(discord_id)),
         )
+        if int(to_unlock) > 0:
+            await self.add_ledger_entry(
+                entry_type="escrow_released",
+                amount=int(to_unlock),
+                from_account=f"escrow:{int(discord_id)}",
+                to_account=f"shares:{int(discord_id)}",
+                reference_type="cashout",
+                reference_id=None,
+                notes="Shares unlocked from cashout escrow",
+            )
         await self.conn.commit()
 
     async def finalize_cashout_paid(
@@ -454,6 +615,15 @@ class Database:
                 "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
                 (int(shares), int(requester_id)),
             )
+            await self.add_ledger_entry(
+                entry_type="escrow_released",
+                amount=int(shares),
+                from_account=f"escrow:{int(requester_id)}",
+                to_account="sold",
+                reference_type="cashout",
+                reference_id=str(int(request_id)),
+                notes="Escrow released on paid cashout",
+            )
             await self.conn.execute(
                 "UPDATE shareholdings SET shares = shares - ? WHERE discord_id=?",
                 (int(shares), int(requester_id)),
@@ -462,6 +632,27 @@ class Database:
                 "UPDATE cashout_requests SET status='paid', handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
                 (int(handled_by) if handled_by is not None else None, note, int(request_id)),
             )
+
+            await self.add_ledger_entry(
+                entry_type="shares_sold",
+                amount=int(shares),
+                from_account=f"shares:{int(requester_id)}",
+                to_account="sold",
+                reference_type="cashout",
+                reference_id=str(int(request_id)),
+                notes=f"Sold {int(shares)} shares via cashout",
+            )
+
+            await self.add_ledger_entry(
+                entry_type="cashout_paid",
+                amount=int(payout_amount),
+                from_account="treasury" if TREASURY_AUTODEDUCT else "external",
+                to_account=f"wallet:{int(requester_id)}",
+                reference_type="cashout",
+                reference_id=str(int(request_id)),
+                notes="Cashout finalized as paid",
+            )
+
             await self._commit()
             return requester_id, shares
         except Exception:
@@ -484,11 +675,38 @@ class Database:
         await self.conn.commit()
 
     async def set_cashout_status(self, request_id: int, status: str, handled_by: int | None = None, note: str | None = None):
-        await self.conn.execute(
-            "UPDATE cashout_requests SET status=?, handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
-            (str(status), int(handled_by) if handled_by is not None else None, note, int(request_id)),
-        )
-        await self.conn.commit()
+        status_str = str(status)
+
+        await self._begin()
+        try:
+            await self.conn.execute(
+                "UPDATE cashout_requests SET status=?, handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
+                (status_str, int(handled_by) if handled_by is not None else None, note, int(request_id)),
+            )
+
+            if status_str == "approved":
+                cur = await self.conn.execute(
+                    "SELECT requester_id, shares FROM cashout_requests WHERE request_id=?",
+                    (int(request_id),),
+                )
+                row = await cur.fetchone()
+                if row:
+                    requester_id, shares = int(row[0]), int(row[1])
+                    est_amount = int(shares) * int(SHARE_CASHOUT_AUEC_PER_SHARE)
+                    await self.add_ledger_entry(
+                        entry_type="cashout_approved",
+                        amount=int(est_amount),
+                        from_account="treasury",
+                        to_account=f"wallet:{requester_id}",
+                        reference_type="cashout",
+                        reference_id=str(int(request_id)),
+                        notes="Cashout approved (estimated payout)",
+                    )
+
+            await self._commit()
+        except Exception:
+            await self._rollback()
+            raise
 
     async def get_cashout_request(self, request_id: int):
         cur = await self.conn.execute(

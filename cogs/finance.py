@@ -259,6 +259,30 @@ class FinanceCog(commands.Cog):
 
         await ctx.followup.send(embed=embed, files=_logo_files(), ephemeral=True)
 
+    @finance.command(name="reconcile", description="Compare treasury value against ledger-derived value")
+    @finance_or_admin()
+    async def reconcile(self, ctx: discord.ApplicationContext):
+        await ctx.defer(ephemeral=True)
+
+        current, ledger_value, drift, baseline_at = await self.db.get_ledger_reconcile()
+
+        embed = discord.Embed(
+            title="🧮 Treasury Reconcile",
+            colour=(discord.Colour.green() if int(drift) == 0 else discord.Colour.orange()),
+        )
+        embed.set_thumbnail(url="attachment://org_logo.png")
+        embed.add_field(name="Treasury (stored)", value=f"`{int(current):,} aUEC`", inline=False)
+        embed.add_field(name="Treasury (ledger)", value=f"`{int(ledger_value):,} aUEC`", inline=False)
+        embed.add_field(name="Drift", value=f"`{int(drift):,} aUEC`", inline=False)
+        embed.add_field(name="Baseline", value=f"`{baseline_at}`" if baseline_at else "No treasury_set baseline", inline=False)
+
+        if int(drift) == 0:
+            embed.set_footer(text="Reconcile OK: no drift detected.")
+        else:
+            embed.set_footer(text="Drift detected. Review ledger + manual treasury updates.")
+
+        await ctx.followup.send(embed=embed, files=_logo_files(), ephemeral=True)
+
 
 def setup(bot: commands.Bot):
     db: Database = bot.db  # type: ignore
