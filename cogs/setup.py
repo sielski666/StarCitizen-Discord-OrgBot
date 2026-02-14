@@ -144,15 +144,21 @@ class SetupCog(commands.Cog):
         shares_sell_channel_id: str,
     ) -> tuple[str, str, str] | None:
         async def ensure_one(channel_id: str, default_name: str) -> str:
+            # Name-first policy: if a channel with the expected name exists,
+            # prefer it and overwrite env with that ID.
+            by_name = discord.utils.get(guild.text_channels, name=default_name)
+            if by_name is not None:
+                return str(by_name.id)
+
+            # Fallback to env-provided channel ID if valid.
             if channel_id.isdigit():
                 ch = guild.get_channel(int(channel_id))
                 if ch is not None:
                     return str(ch.id)
 
-            by_name = discord.utils.get(guild.text_channels, name=default_name)
-            if by_name is None:
-                by_name = await guild.create_text_channel(default_name)
-            return str(by_name.id)
+            # Otherwise create it.
+            created = await guild.create_text_channel(default_name)
+            return str(created.id)
 
         try:
             jobs_id = await ensure_one(jobs_channel_id, "jobs")
