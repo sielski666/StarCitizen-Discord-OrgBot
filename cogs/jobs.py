@@ -1105,96 +1105,43 @@ class JobsCog(commands.Cog):
             return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
         await ctx.respond(f"Event template `{name}` deleted.", ephemeral=True)
 
-    @jobtemplates.command(name="add", description="(Admin) Create a job template (modal)")
+    @jobtemplates.command(name="add", description="(Deprecated) Use /eventtemplate add")
     @admin_only()
     async def template_add(self, ctx: discord.ApplicationContext):
-        await ctx.send_modal(JobTemplateModal(self))
+        await ctx.respond("`/jobtemplates add` is deprecated. Use `/eventtemplate add`.", ephemeral=True)
 
-    @jobtemplates.command(name="update", description="(Admin) Update an existing job template (modal)")
+    @jobtemplates.command(name="update", description="(Deprecated) Use /eventtemplate update")
     @admin_only()
     async def template_update(self, ctx: discord.ApplicationContext, name: str):
-        row = await self.db.get_job_template_by_name(str(name))
-        if not row:
-            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
-        await ctx.send_modal(JobTemplateModal(self, existing=row))
+        await ctx.respond("`/jobtemplates update` is deprecated. Use `/eventtemplate update`.", ephemeral=True)
 
-    @jobtemplates.command(name="clone", description="(Admin) Clone a template to a new name")
+    @jobtemplates.command(name="clone", description="(Deprecated) Use /eventtemplate clone")
     @admin_only()
     async def template_clone(self, ctx: discord.ApplicationContext, source_name: str, new_name: str):
-        row = await self.db.get_job_template_by_name(str(source_name))
-        if not row:
-            return await ctx.respond(f"Template `{source_name}` not found.", ephemeral=True)
+        await ctx.respond("`/jobtemplates clone` is deprecated. Use `/eventtemplate clone`.", ephemeral=True)
 
-        _, _, title, description, rmin, rmax, tier_required, category, active = row
-        template_id = await self.db.upsert_job_template(
-            name=str(new_name).strip(),
-            default_title=str(title),
-            default_description=str(description),
-            default_reward_min=int(rmin),
-            default_reward_max=int(rmax),
-            default_tier_required=int(tier_required),
-            category=(str(category) if category else None),
-            active=bool(int(active) == 1),
-        )
-        await ctx.respond(f"Template cloned: `{source_name}` -> `{new_name}` (id `{template_id}`).", ephemeral=True)
-
-    @jobtemplates.command(name="list", description="List job templates")
+    @jobtemplates.command(name="list", description="(Deprecated) Use /eventtemplate list")
     async def template_list(self, ctx: discord.ApplicationContext, include_inactive: bool = True):
-        rows = await self.db.list_job_templates(include_inactive=bool(include_inactive), limit=50)
-        if not rows:
-            return await ctx.respond("No templates found.", ephemeral=True)
+        await ctx.respond("`/jobtemplates list` is deprecated. Use `/eventtemplate list`.", ephemeral=True)
 
-        lines = []
-        for r in rows[:25]:
-            template_id, name, default_title, default_description, rmin, rmax, tier_required, category, active = r
-            state = "active" if int(active) == 1 else "inactive"
-            lines.append(
-                f"• `{name}` ({state}) — reward `{int(rmin):,}`-`{int(rmax):,}`, tier `{int(tier_required)}+`, category `{category or 'general'}`"
-            )
-
-        await ctx.respond("\n".join(lines), ephemeral=True)
-
-    @jobtemplates.command(name="view", description="View one template in detail")
+    @jobtemplates.command(name="view", description="(Deprecated) Use /eventtemplate view")
     async def template_view(self, ctx: discord.ApplicationContext, name: str):
-        row = await self.db.get_job_template_by_name(str(name))
-        if not row:
-            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        await ctx.respond("`/jobtemplates view` is deprecated. Use `/eventtemplate view`.", ephemeral=True)
 
-        template_id, tname, title, description, rmin, rmax, tier_required, category, active = row
-        state = "active" if int(active) == 1 else "inactive"
-        await ctx.respond(
-            f"Template `{tname}` (id `{template_id}`, {state})\n"
-            f"Title: {title}\n"
-            f"Description: {description}\n"
-            f"Reward range: `{int(rmin):,}`-`{int(rmax):,}`\n"
-            f"Tier required: `{int(tier_required)}`\n"
-            f"Category: `{category or 'general'}`",
-            ephemeral=True,
-        )
-
-    @jobtemplates.command(name="disable", description="(Admin) Disable a job template")
+    @jobtemplates.command(name="disable", description="(Deprecated) Use /eventtemplate disable")
     @admin_only()
     async def template_disable(self, ctx: discord.ApplicationContext, name: str):
-        ok = await self.db.set_job_template_active(name=name, active=False)
-        if not ok:
-            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
-        await ctx.respond(f"Template `{name}` disabled.", ephemeral=True)
+        await ctx.respond("`/jobtemplates disable` is deprecated. Use `/eventtemplate disable`.", ephemeral=True)
 
-    @jobtemplates.command(name="enable", description="(Admin) Enable a job template")
+    @jobtemplates.command(name="enable", description="(Deprecated) Use /eventtemplate enable")
     @admin_only()
     async def template_enable(self, ctx: discord.ApplicationContext, name: str):
-        ok = await self.db.set_job_template_active(name=name, active=True)
-        if not ok:
-            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
-        await ctx.respond(f"Template `{name}` enabled.", ephemeral=True)
+        await ctx.respond("`/jobtemplates enable` is deprecated. Use `/eventtemplate enable`.", ephemeral=True)
 
-    @jobtemplates.command(name="delete", description="(Admin) Delete a template")
+    @jobtemplates.command(name="delete", description="(Deprecated) Use /eventtemplate delete")
     @admin_only()
     async def template_delete(self, ctx: discord.ApplicationContext, name: str):
-        ok = await self.db.delete_job_template(name=name)
-        if not ok:
-            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
-        await ctx.respond(f"Template `{name}` deleted.", ephemeral=True)
+        await ctx.respond("`/jobtemplates delete` is deprecated. Use `/eventtemplate delete`.", ephemeral=True)
 
     @jobs.command(name="attend", description="Join an event job attendance list")
     async def attend(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):

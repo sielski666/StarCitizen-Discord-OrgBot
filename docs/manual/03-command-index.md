@@ -20,15 +20,20 @@ This page is the command map. Use the detailed pages for exact usage and behavio
 - `/jobs attendance_lock`
 - `/jobs attendance_unlock`
 
-## Job Templates
-- `/jobtemplates add`
-- `/jobtemplates update`
-- `/jobtemplates clone`
-- `/jobtemplates list`
-- `/jobtemplates view`
-- `/jobtemplates disable`
-- `/jobtemplates enable`
-- `/jobtemplates delete`
+## Event jobs
+- `/eventjob post template:<name>`
+
+## Event templates
+- `/eventtemplate add`
+- `/eventtemplate update`
+- `/eventtemplate clone`
+- `/eventtemplate list`
+- `/eventtemplate view`
+- `/eventtemplate disable`
+- `/eventtemplate enable`
+- `/eventtemplate delete`
+
+> Legacy note: `/jobtemplates ...` commands are deprecated aliases and now point to `/eventtemplate ...`.
 
 ## Job Test (admin)
 - `/jobtest event_sync_check`
