@@ -139,32 +139,26 @@ class SetupCog(commands.Cog):
     async def _ensure_channels(
         self,
         guild: discord.Guild,
-        jobs_channel_id: str,
         treasury_channel_id: str,
         shares_sell_channel_id: str,
-    ) -> tuple[str, str, str] | None:
+    ) -> tuple[str, str] | None:
         async def ensure_one(channel_id: str, default_name: str) -> str:
-            # Name-first policy: if a channel with the expected name exists,
-            # prefer it and overwrite env with that ID.
             by_name = discord.utils.get(guild.text_channels, name=default_name)
             if by_name is not None:
                 return str(by_name.id)
 
-            # Fallback to env-provided channel ID if valid.
             if channel_id.isdigit():
                 ch = guild.get_channel(int(channel_id))
                 if ch is not None:
                     return str(ch.id)
 
-            # Otherwise create it.
             created = await guild.create_text_channel(default_name)
             return str(created.id)
 
         try:
-            jobs_id = await ensure_one(jobs_channel_id, "jobs")
             treasury_id = await ensure_one(treasury_channel_id, "treasury")
             shares_id = await ensure_one(shares_sell_channel_id, "share-sell-confirm")
-            return jobs_id, treasury_id, shares_id
+            return treasury_id, shares_id
         except Exception:
             return None
 
@@ -271,7 +265,6 @@ class SetupCog(commands.Cog):
 
         ensured = await self._ensure_channels(
             guild,
-            env.get("JOBS_CHANNEL_ID", ""),
             env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
             env.get("SHARES_SELL_CHANNEL_ID", ""),
         )
@@ -281,7 +274,7 @@ class SetupCog(commands.Cog):
                 ephemeral=True,
             )
 
-        jobs_id, treasury_id, shares_id = ensured
+        treasury_id, shares_id = ensured
 
         event_handler_role_id = await self._ensure_role(
             guild,
@@ -305,7 +298,7 @@ class SetupCog(commands.Cog):
 
         updates = {
             "GUILD_ID": env.get("GUILD_ID", "") or str(guild.id),
-            "JOBS_CHANNEL_ID": str(jobs_id),
+            "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
@@ -321,7 +314,6 @@ class SetupCog(commands.Cog):
         msg = (
             "✅ Setup synced from .env and guild context\n"
             f"Guild: `{updates['GUILD_ID']}`\n"
-            f"Jobs: <#{jobs_id}>\n"
             f"Treasury: <#{treasury_id}>\n"
             f"Shares Sell: <#{shares_id}>\n"
             f"Event Handler Role: <@&{event_handler_role_id}>\n"
@@ -373,7 +365,7 @@ class SetupCog(commands.Cog):
 
         await ctx.respond(text, ephemeral=True)
 
-    @setup_group.command(name="createchannels", description="Create missing jobs/treasury/shares channels")
+    @setup_group.command(name="createchannels", description="Create missing treasury/shares + job-area channels")
     async def setup_create_channels(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
         if not member or not is_admin_member(member):
@@ -387,7 +379,6 @@ class SetupCog(commands.Cog):
 
         ensured = await self._ensure_channels(
             guild,
-            env.get("JOBS_CHANNEL_ID", ""),
             env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
             env.get("SHARES_SELL_CHANNEL_ID", ""),
         )
@@ -397,7 +388,7 @@ class SetupCog(commands.Cog):
                 ephemeral=True,
             )
 
-        jobs_id, treasury_id, shares_id = ensured
+        treasury_id, shares_id = ensured
 
         area_map = await self._ensure_job_area_channels(guild)
         if area_map is None:
@@ -407,7 +398,7 @@ class SetupCog(commands.Cog):
             )
 
         updates = {
-            "JOBS_CHANNEL_ID": str(jobs_id),
+            "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
@@ -417,7 +408,6 @@ class SetupCog(commands.Cog):
 
         await ctx.respond(
             "✅ Channels ready\n"
-            f"Jobs: <#{jobs_id}>\n"
             f"Treasury: <#{treasury_id}>\n"
             f"Shares Sell: <#{shares_id}>\n"
             f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
