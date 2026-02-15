@@ -1,21 +1,22 @@
 # 04 - Jobs Commands
 
-## `/jobs post [template:<name>]`
-**Who:** guild members (event templates restricted to Event Handler/Admin)
+## `/jobs post`
+**Who:** guild members
 
 **How to use:**
-- Basic job: run `/jobs post` and complete modal.
-- Template job: `/jobs post template:<name>`.
+- Run `/jobs post`
+- Choose area -> choose tier -> fill modal
 
 **What it does:**
-- Creates a job card in jobs channel.
-- If template category is `event`, bot creates a linked Scheduled Event and sync link.
+- Creates a non-event job card routed to the mapped area channel.
 - Reserves escrow from available treasury at job creation.
+
+> Event jobs are posted with `/eventjob post template:<name>`.
 
 ---
 
 ## `/jobs complete job_id:<id>`
-**Who:** claimer or admin
+**Who:** claimer or admin (non-event jobs)
 
 **How to use:**
 - Run after work is done.

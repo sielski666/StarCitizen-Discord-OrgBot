@@ -22,6 +22,9 @@ This page is the command map. Use the detailed pages for exact usage and behavio
 
 ## Event jobs
 - `/eventjob post template:<name>`
+- `/eventjob attendee_add job_id member` (finance/admin)
+- `/eventjob attendee_remove job_id member` (finance/admin)
+- `/eventjob attendee_list job_id`
 
 ## Event templates
 - `/eventtemplate add`
