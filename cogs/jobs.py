@@ -20,6 +20,7 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 REP_PER_JOB_PAYOUT = int(os.getenv("REP_PER_JOB_PAYOUT", "10") or "10")
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
 JOBS_CHANNEL_ID = int(os.getenv("JOBS_CHANNEL_ID", "0") or "0")
+EVENT_HANDLER_ROLE_ID = int(os.getenv("EVENT_HANDLER_ROLE_ID", "0") or "0")
 
 logger = logging.getLogger(__name__)
 
@@ -800,6 +801,12 @@ class JobsCog(commands.Cog):
 
             if int(active) != 1:
                 return await ctx.respond(f"Template `{template_name}` is inactive.", ephemeral=True)
+
+            if str(category or "").strip().lower() == "event" and EVENT_HANDLER_ROLE_ID:
+                member = ctx.author if isinstance(ctx.author, discord.Member) else None
+                has_event_handler = bool(member and any(int(r.id) == int(EVENT_HANDLER_ROLE_ID) for r in member.roles))
+                if not has_event_handler and not (member and is_admin_member(member)):
+                    return await ctx.respond("Only Event Handlers (or admins) can post event templates.", ephemeral=True)
 
             default_reward = int(default_reward_min or 0) or int(default_reward_max or 0) or 1000
             await ctx.send_modal(

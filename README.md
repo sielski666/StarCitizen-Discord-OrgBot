@@ -84,6 +84,7 @@ Required keys used by the bot:
 - `GUILD_ID`
 - `FINANCE_ROLE_ID`
 - `JOBS_ADMIN_ROLE_ID`
+- `EVENT_HANDLER_ROLE_ID` (required to restrict event template posting)
 - `JOBS_CHANNEL_ID`
 - `TREASURY_CHANNEL_ID`
 - `SHARES_SELL_CHANNEL_ID`
