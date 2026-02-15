@@ -1,0 +1,60 @@
+name: Announce GitHub Release to Discord
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send release announcement to Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK_URL }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          HTML_URL: ${{ github.event.release.html_url }}
+          BODY: ${{ github.event.release.body }}
+          AUTHOR: ${{ github.event.release.author.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "DISCORD_ANNOUNCEMENTS_WEBHOOK_URL is not set; skipping."
+            exit 0
+          fi
+
+          TITLE="${RELEASE_NAME:-Release ${TAG_NAME}}"
+          DESC=$(printf "%s" "${BODY:-No release notes provided.}" | head -c 3800)
+
+          jq -n \
+            --arg title "$TITLE" \
+            --arg tag "$TAG_NAME" \
+            --arg url "$HTML_URL" \
+            --arg desc "$DESC" \
+            --arg author "$AUTHOR" \
+            --arg repo "$REPO" \
+            '{
+              "content": "🚀 New release published",
+              "embeds": [
+                {
+                  "title": $title,
+                  "url": $url,
+                  "description": $desc,
+                  "color": 5814783,
+                  "fields": [
+                    {"name": "Tag", "value": $tag, "inline": true},
+                    {"name": "Repo", "value": $repo, "inline": true},
+                    {"name": "Author", "value": $author, "inline": true}
+                  ]
+                }
+              ]
+            }' > payload.json
+
+          curl -sS -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data @payload.json
+
+          echo "Release announcement sent to Discord."
