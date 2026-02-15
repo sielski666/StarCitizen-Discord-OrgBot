@@ -3,6 +3,7 @@
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   tutorialSidebar: [
+    'install-update-guide',
     'intro',
     'setup-commands',
     'command-index',
@@ -12,7 +13,6 @@ const sidebars = {
     'finance-treasury-commands',
     'account-commands',
     'jobtest-commands',
-    'install-update-guide',
     'troubleshooting',
     'feedback-known-issues',
     'changelog',
