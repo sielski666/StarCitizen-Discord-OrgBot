@@ -143,6 +143,8 @@ def _job_embed(
     claimed_by: int | None,
     min_level: int = 0,
     is_event: bool = False,
+    attendee_ids: list[int] | None = None,
+    attendance_locked: bool = False,
 ) -> discord.Embed:
     e = discord.Embed(
         title=f"📌 CONTRACT • Job #{job_id}",
@@ -162,10 +164,17 @@ def _job_embed(
     e.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
     e.add_field(name="Posted by", value=f"<@{created_by}>", inline=True)
     if is_event:
-        e.add_field(name="Participation", value="RSVP via linked event", inline=True)
+        attendees = [int(x) for x in (attendee_ids or [])]
+        total = len(attendees)
+        preview = "\n".join(f"<@{uid}>" for uid in attendees[:8]) if attendees else "—"
+        if total > 8:
+            preview += f"\n… +{total - 8} more"
+        lock_tag = "🔒 Locked" if attendance_locked else "🟢 Live"
+        e.add_field(name=f"Participants ({total})", value=preview, inline=True)
+        e.add_field(name="Attendance", value=f"RSVP via linked event\n{lock_tag}", inline=True)
     else:
         e.add_field(name="Claimed by", value=f"<@{claimed_by}>" if claimed_by else "—", inline=True)
-    e.add_field(name="\u200b", value="\u200b", inline=True)
+        e.add_field(name="\u200b", value="\u200b", inline=True)
 
     if is_event:
         e.set_footer(text="Event job: participation is RSVP-based. No claim required.")
@@ -613,11 +622,14 @@ class JobWorkflowView(discord.ui.View):
         self.is_event = bool(is_event)
 
         if self.is_event:
-            self.accept_btn.disabled = True
+            self.remove_item(self.accept_btn)
 
         if status == "open":
             self.complete_btn.disabled = True
             self.confirm_btn.disabled = True
+            if self.is_event:
+                self.remove_item(self.complete_btn)
+                self.remove_item(self.confirm_btn)
         elif status == "claimed":
             self.accept_btn.disabled = True
             self.confirm_btn.disabled = True
@@ -942,6 +954,71 @@ class JobsCog(commands.Cog):
         self.bot = bot
         self.db = db
 
+    async def _refresh_event_job_card(self, job_id: int) -> None:
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return
+
+        (
+            jid,
+            channel_id,
+            message_id,
+            title,
+            description,
+            reward,
+            status,
+            created_by,
+            claimed_by,
+            thread_id,
+            created_at,
+            updated_at,
+        ) = row
+
+        category = await self.db.get_job_category(int(jid))
+        if str(category or "").strip().lower() != "event":
+            return
+
+        guild = self.bot.guilds[0] if self.bot.guilds else None
+        if guild is None:
+            return
+
+        channel = guild.get_channel(int(channel_id))
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(int(channel_id))
+            except Exception:
+                return
+
+        try:
+            msg = await channel.fetch_message(int(message_id))
+        except Exception:
+            return
+
+        min_level = _extract_min_level_from_embed(msg.embeds[0]) if msg.embeds else 0
+        locked = await self.db.get_job_attendance_lock(int(jid))
+        attendee_ids = await self.db.get_job_attendance_snapshot(int(jid)) if locked else [int(a[0]) for a in await self.db.list_event_attendees(int(jid))]
+
+        updated = _job_embed(
+            int(jid),
+            str(title),
+            str(description),
+            int(reward),
+            str(status),
+            int(created_by),
+            int(claimed_by) if claimed_by else None,
+            min_level=int(min_level),
+            is_event=True,
+            attendee_ids=attendee_ids,
+            attendance_locked=bool(locked),
+        )
+
+        files = _logo_files()
+        await msg.edit(
+            embed=updated,
+            view=JobWorkflowView(self.db, status=str(status), is_event=True) if str(status) != "cancelled" else None,
+            files=files if files else None,
+        )
+
     @commands.Cog.listener()
     async def on_raw_scheduled_event_user_add(self, payload: discord.RawScheduledEventSubscription):
         try:
@@ -949,6 +1026,7 @@ class JobsCog(commands.Cog):
             if not job_id:
                 return
             await self.db.add_event_attendee(int(job_id), int(payload.user_id))
+            await self._refresh_event_job_card(int(job_id))
         except Exception:
             logger.debug("Failed syncing scheduled event RSVP add", exc_info=True)
 
@@ -959,6 +1037,7 @@ class JobsCog(commands.Cog):
             if not job_id:
                 return
             await self.db.remove_event_attendee(int(job_id), int(payload.user_id))
+            await self._refresh_event_job_card(int(job_id))
         except Exception:
             logger.debug("Failed syncing scheduled event RSVP remove", exc_info=True)
 
@@ -1068,6 +1147,7 @@ class JobsCog(commands.Cog):
         ok = await self.db.add_event_attendee_force(int(job_id), int(member.id))
         if not ok:
             return await ctx.respond(f"<@{member.id}> is already on attendance for Job #{int(job_id)}.", ephemeral=True)
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"Added <@{member.id}> to attendance for Job #{int(job_id)}.", ephemeral=True)
 
     @eventjob.command(name="attendee_remove", description="(Finance/Admin) Manually remove attendee from event job")
@@ -1083,6 +1163,7 @@ class JobsCog(commands.Cog):
         ok = await self.db.remove_event_attendee_force(int(job_id), int(member.id))
         if not ok:
             return await ctx.respond(f"<@{member.id}> was not on attendance for Job #{int(job_id)}.", ephemeral=True)
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"Removed <@{member.id}> from attendance for Job #{int(job_id)}.", ephemeral=True)
 
     @eventjob.command(name="attendee_list", description="List attendees for an event job")
@@ -1224,6 +1305,7 @@ class JobsCog(commands.Cog):
         if not added:
             return await ctx.respond(f"You are already on attendance for Job #{int(job_id)}.", ephemeral=True)
 
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"You are marked as attending Job #{int(job_id)}.", ephemeral=True)
 
     @jobs.command(name="unattend", description="Leave an event job attendance list")
@@ -1240,6 +1322,7 @@ class JobsCog(commands.Cog):
         if not removed:
             return await ctx.respond(f"You were not on attendance for Job #{int(job_id)}.", ephemeral=True)
 
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"You have been removed from attendance for Job #{int(job_id)}.", ephemeral=True)
 
     @jobs.command(name="attendees", description="Show current event attendees for a job")
@@ -1273,6 +1356,7 @@ class JobsCog(commands.Cog):
         attendee_ids = [int(a[0]) for a in attendees]
         await self.db.set_job_attendance_snapshot(int(job_id), attendee_ids)
         await self.db.set_job_attendance_lock(int(job_id), True)
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"Attendance locked for Job #{int(job_id)} with `{len(attendee_ids)}` attendees.", ephemeral=True)
 
     @jobs.command(name="attendance_unlock", description="(Finance/Admin) Unlock event attendance list")
@@ -1285,6 +1369,7 @@ class JobsCog(commands.Cog):
         if category != "event":
             return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
         await self.db.set_job_attendance_lock(int(job_id), False)
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"Attendance unlocked for Job #{int(job_id)}.", ephemeral=True)
 
     @jobs.command(name="attendance_sync", description="(Finance/Admin) Force-sync attendance from scheduled event RSVPs")
@@ -1305,6 +1390,7 @@ class JobsCog(commands.Cog):
             count = await self._sync_attendance_from_event(int(job_id))
         except ValueError as e:
             return await ctx.respond(str(e), ephemeral=True)
+        await self._refresh_event_job_card(int(job_id))
         await ctx.respond(f"Attendance synced for Job #{int(job_id)}. Tracked attendees: `{int(count)}`.", ephemeral=True)
 
     # COMPLETE (Claimer OR Admin)
@@ -1393,6 +1479,7 @@ class JobsCog(commands.Cog):
         attendee_ids = [int(a[0]) for a in attendees]
         await self.db.set_job_attendance_snapshot(int(job_id), attendee_ids)
         await self.db.set_job_attendance_lock(int(job_id), True)
+        await self._refresh_event_job_card(int(job_id))
 
         await ctx.respond(
             f"Snapshot locked for Job #{int(job_id)}. Synced RSVPs: `{int(count)}`, snapshot size: `{len(attendee_ids)}`.",
