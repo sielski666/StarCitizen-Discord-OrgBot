@@ -1,6 +1,8 @@
 # 02 - Quick Start
 
 ## Baseline checks
+- Copy `.env.example` -> `.env` (remove `.example` suffix)
+- Manually set `DISCORD_TOKEN` in `.env`
 - Bot online in server
 - `/setup status` clean
 - Treasury initialized

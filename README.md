@@ -53,8 +53,7 @@ A Discord bot for managing org jobs, payouts, treasury, rep/levels, and account 
 │   └── tiers.py
 ├── assets/
 ├── requirements.txt
-├── .env.example
-└── .env(template)
+└── .env.example
 ```
 
 ## Setup
@@ -75,7 +74,7 @@ pip install -r requirements.txt
 
 ### 3) Configure environment
 
-Copy `.env.example` (or `.env(template)`) to `.env`.
+Copy `.env.example` to `.env` (remove the `.example` suffix).
 
 **Bot token lives in `.env`** and should be set manually:
 
