@@ -168,6 +168,22 @@ class SetupCog(commands.Cog):
         except Exception:
             return None
 
+    async def _ensure_role(self, guild: discord.Guild, role_id: str, default_name: str) -> str | None:
+        try:
+            by_name = discord.utils.get(guild.roles, name=default_name)
+            if by_name is not None:
+                return str(by_name.id)
+
+            if role_id.isdigit():
+                role = guild.get_role(int(role_id))
+                if role is not None:
+                    return str(role.id)
+
+            created = await guild.create_role(name=default_name, mentionable=True, reason="Org bot setup")
+            return str(created.id)
+        except Exception:
+            return None
+
     def _read_env(self) -> dict[str, str]:
         data: dict[str, str] = {}
         if not ENV_PATH.exists():
@@ -189,6 +205,7 @@ class SetupCog(commands.Cog):
             "GUILD_ID",
             "FINANCE_ROLE_ID",
             "JOBS_ADMIN_ROLE_ID",
+            "EVENT_HANDLER_ROLE_ID",
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
@@ -234,12 +251,24 @@ class SetupCog(commands.Cog):
 
         jobs_id, treasury_id, shares_id = ensured
 
+        event_handler_role_id = await self._ensure_role(
+            guild,
+            env.get("EVENT_HANDLER_ROLE_ID", ""),
+            "Event Handler",
+        )
+        if event_handler_role_id is None:
+            return await ctx.respond(
+                "Failed creating/validating Event Handler role. Ensure bot has Manage Roles permission.",
+                ephemeral=True,
+            )
+
         updates = {
             "GUILD_ID": env.get("GUILD_ID", "") or str(guild.id),
             "JOBS_CHANNEL_ID": str(jobs_id),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
+            "EVENT_HANDLER_ROLE_ID": str(event_handler_role_id),
         }
         self._write_env(updates)
 
@@ -253,6 +282,7 @@ class SetupCog(commands.Cog):
             f"Jobs: <#{jobs_id}>\n"
             f"Treasury: <#{treasury_id}>\n"
             f"Shares Sell: <#{shares_id}>\n"
+            f"Event Handler Role: <@&{event_handler_role_id}>\n"
             "(Token remains managed in `.env` as DISCORD_TOKEN.)"
         )
         if missing_roles:
@@ -273,6 +303,7 @@ class SetupCog(commands.Cog):
             "GUILD_ID",
             "FINANCE_ROLE_ID",
             "JOBS_ADMIN_ROLE_ID",
+            "EVENT_HANDLER_ROLE_ID",
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
@@ -285,6 +316,7 @@ class SetupCog(commands.Cog):
             f"Guild: `{env.get('GUILD_ID', 'missing')}`\n"
             f"Finance Role: `{env.get('FINANCE_ROLE_ID', 'missing')}`\n"
             f"Jobs Admin Role: `{env.get('JOBS_ADMIN_ROLE_ID', 'missing')}`\n"
+            f"Event Handler Role: `{env.get('EVENT_HANDLER_ROLE_ID', 'missing')}`\n"
             f"Jobs Channel: `{env.get('JOBS_CHANNEL_ID', 'missing')}`\n"
             f"Treasury Channel: `{env.get('TREASURY_CHANNEL_ID', env.get('FINANCE_CHANNEL_ID', 'missing'))}`\n"
             f"Shares Sell Channel: `{env.get('SHARES_SELL_CHANNEL_ID', 'missing')}`\n"
