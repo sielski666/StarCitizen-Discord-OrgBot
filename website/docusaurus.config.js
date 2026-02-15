@@ -27,7 +27,7 @@ const config = {
       ({
         docs: {
           sidebarPath: './sidebars.js',
-          routeBasePath: '/',
+          routeBasePath: '/docs',
           editUrl: 'https://github.com/sielski666/StarCitizen-Discord-OrgBot/tree/main/website/',
         },
         blog: false,
@@ -71,7 +71,7 @@ const config = {
             items: [
               {
                 label: 'Quick Start',
-                to: '/',
+                to: '/docs/intro',
               },
             ],
           },
