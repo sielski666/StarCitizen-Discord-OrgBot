@@ -647,6 +647,13 @@ class JobWorkflowView(discord.ui.View):
         if status != "open":
             return await interaction.followup.send(f"This job is no longer open (status: {_status_text(status)}).", ephemeral=True)
 
+        category = await self.db.get_job_category(int(job_id_db))
+        if str(category or "").strip().lower() == "event":
+            return await interaction.followup.send(
+                "Event jobs use RSVP attendance. Please mark Interested/Going on the linked event instead of claiming.",
+                ephemeral=True,
+            )
+
         claimed = await self.db.claim_job(job_id_db, claimed_by=interaction.user.id)
         if not claimed:
             return await interaction.followup.send("Someone else accepted it first.", ephemeral=True)
@@ -998,6 +1005,52 @@ class JobsCog(commands.Cog):
     @jobs_poster_or_admin()
     async def event_post(self, ctx: discord.ApplicationContext, template: str):
         return await self._open_template_post_modal(ctx, template, require_event=True)
+
+    @eventjob.command(name="attendee_add", description="(Finance/Admin) Manually add attendee to event job")
+    @finance_or_admin()
+    async def event_attendee_add(self, ctx: discord.ApplicationContext, job_id: int, member: discord.Member):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if str(category or "").strip().lower() != "event":
+            return await ctx.respond("This command is only for event jobs.", ephemeral=True)
+
+        ok = await self.db.add_event_attendee_force(int(job_id), int(member.id))
+        if not ok:
+            return await ctx.respond(f"<@{member.id}> is already on attendance for Job #{int(job_id)}.", ephemeral=True)
+        await ctx.respond(f"Added <@{member.id}> to attendance for Job #{int(job_id)}.", ephemeral=True)
+
+    @eventjob.command(name="attendee_remove", description="(Finance/Admin) Manually remove attendee from event job")
+    @finance_or_admin()
+    async def event_attendee_remove(self, ctx: discord.ApplicationContext, job_id: int, member: discord.Member):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if str(category or "").strip().lower() != "event":
+            return await ctx.respond("This command is only for event jobs.", ephemeral=True)
+
+        ok = await self.db.remove_event_attendee_force(int(job_id), int(member.id))
+        if not ok:
+            return await ctx.respond(f"<@{member.id}> was not on attendance for Job #{int(job_id)}.", ephemeral=True)
+        await ctx.respond(f"Removed <@{member.id}> from attendance for Job #{int(job_id)}.", ephemeral=True)
+
+    @eventjob.command(name="attendee_list", description="List attendees for an event job")
+    async def event_attendee_list(self, ctx: discord.ApplicationContext, job_id: int):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if str(category or "").strip().lower() != "event":
+            return await ctx.respond("This command is only for event jobs.", ephemeral=True)
+
+        attendees = await self.db.list_event_attendees(int(job_id))
+        if not attendees:
+            return await ctx.respond(f"No attendees tracked for Job #{int(job_id)}.", ephemeral=True)
+
+        mentions = [f"<@{int(a[0])}>" for a in attendees[:75]]
+        await ctx.respond(f"Event attendees for Job #{int(job_id)}:\n" + "\n".join(mentions), ephemeral=True)
 
     @eventtemplate.command(name="add", description="(Admin) Create an event template (modal)")
     @admin_only()

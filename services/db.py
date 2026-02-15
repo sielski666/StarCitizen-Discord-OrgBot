@@ -606,9 +606,25 @@ class Database:
         await self.conn.commit()
         return cur.rowcount == 1
 
+    async def add_event_attendee_force(self, job_id: int, discord_id: int) -> bool:
+        cur = await self.conn.execute(
+            "INSERT OR IGNORE INTO job_event_attendance(job_id, discord_id, status) VALUES(?,?, 'joined')",
+            (int(job_id), int(discord_id)),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
     async def remove_event_attendee(self, job_id: int, discord_id: int) -> bool:
         if await self.get_job_attendance_lock(int(job_id)):
             return False
+        cur = await self.conn.execute(
+            "DELETE FROM job_event_attendance WHERE job_id=? AND discord_id=?",
+            (int(job_id), int(discord_id)),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def remove_event_attendee_force(self, job_id: int, discord_id: int) -> bool:
         cur = await self.conn.execute(
             "DELETE FROM job_event_attendance WHERE job_id=? AND discord_id=?",
             (int(job_id), int(discord_id)),
