@@ -491,10 +491,12 @@ class JobTemplateModal(discord.ui.Modal):
         self,
         cog: "JobsCog",
         existing: tuple | None = None,
+        force_category: str | None = None,
     ):
         title = "Update Job Template" if existing else "Create Job Template"
         super().__init__(title=title)
         self.cog = cog
+        self.force_category = str(force_category).strip().lower() if force_category else None
 
         existing_name = str(existing[1]) if existing else ""
         existing_title = str(existing[2]) if existing else ""
@@ -548,6 +550,8 @@ class JobTemplateModal(discord.ui.Modal):
             return await interaction.response.send_message("Tier/category must be `tier,category`.", ephemeral=True)
         tier_raw, category = tc_parts
         category = category or "general"
+        if self.force_category:
+            category = self.force_category
 
         if not name:
             return await interaction.response.send_message("Template name is required.", ephemeral=True)
@@ -937,58 +941,169 @@ class JobsCog(commands.Cog):
         return len(seen_ids)
 
     jobs = discord.SlashCommandGroup("jobs", "Job board commands")
+    eventjob = discord.SlashCommandGroup("eventjob", "Event job posting commands")
     jobtemplates = discord.SlashCommandGroup("jobtemplates", "Job template admin commands")
+    eventtemplate = discord.SlashCommandGroup("eventtemplate", "Event template admin commands")
     jobtest = discord.SlashCommandGroup("jobtest", "Job event self-test/admin tools")
 
-    @jobs.command(name="post", description="Create a job (tier dropdown + form)")
-    @jobs_poster_or_admin()
-    async def post(
-        self,
-        ctx: discord.ApplicationContext,
-        template: discord.Option(str, required=False, description="Optional template name") = None,
-    ):
-        if template:
-            row = await self.db.get_job_template_by_name(str(template))
-            if not row:
-                return await ctx.respond(f"Template `{template}` not found.", ephemeral=True)
+    async def _open_template_post_modal(self, ctx: discord.ApplicationContext, template_name: str, require_event: bool = False):
+        row = await self.db.get_job_template_by_name(str(template_name))
+        if not row:
+            return await ctx.respond(f"Template `{template_name}` not found.", ephemeral=True)
 
-            (
-                template_id,
-                template_name,
-                default_title,
-                default_description,
-                default_reward_min,
-                default_reward_max,
-                default_tier_required,
-                category,
-                active,
-            ) = row
+        (
+            template_id,
+            resolved_name,
+            default_title,
+            default_description,
+            default_reward_min,
+            default_reward_max,
+            default_tier_required,
+            category,
+            active,
+        ) = row
 
-            if int(active) != 1:
-                return await ctx.respond(f"Template `{template_name}` is inactive.", ephemeral=True)
+        category_norm = str(category or "").strip().lower()
+        if require_event and category_norm != "event":
+            return await ctx.respond(f"Template `{resolved_name}` is not an event template.", ephemeral=True)
 
-            if str(category or "").strip().lower() == "event" and EVENT_HANDLER_ROLE_ID:
-                member = ctx.author if isinstance(ctx.author, discord.Member) else None
-                has_event_handler = bool(member and any(int(r.id) == int(EVENT_HANDLER_ROLE_ID) for r in member.roles))
-                if not has_event_handler and not (member and is_admin_member(member)):
-                    return await ctx.respond("Only Event Handlers (or admins) can post event templates.", ephemeral=True)
+        if int(active) != 1:
+            return await ctx.respond(f"Template `{resolved_name}` is inactive.", ephemeral=True)
 
-            default_reward = int(default_reward_min or 0) or int(default_reward_max or 0) or 1000
-            await ctx.send_modal(
-                JobPostModal(
-                    self,
-                    min_level=int(default_tier_required or 0),
-                    prefill_title=str(default_title),
-                    prefill_description=str(default_description),
-                    prefill_reward=int(default_reward),
-                    category=(str(category) if category else None),
-                    template_id=int(template_id),
-                )
+        if category_norm == "event" and EVENT_HANDLER_ROLE_ID:
+            member = ctx.author if isinstance(ctx.author, discord.Member) else None
+            has_event_handler = bool(member and any(int(r.id) == int(EVENT_HANDLER_ROLE_ID) for r in member.roles))
+            if not has_event_handler and not (member and is_admin_member(member)):
+                return await ctx.respond("Only Event Handlers (or admins) can post event templates.", ephemeral=True)
+
+        default_reward = int(default_reward_min or 0) or int(default_reward_max or 0) or 1000
+        await ctx.send_modal(
+            JobPostModal(
+                self,
+                min_level=int(default_tier_required or 0),
+                prefill_title=str(default_title),
+                prefill_description=str(default_description),
+                prefill_reward=int(default_reward),
+                category=(str(category) if category else None),
+                template_id=int(template_id),
             )
-            return
+        )
 
+    @jobs.command(name="post", description="Create a job (area -> tier -> form)")
+    @jobs_poster_or_admin()
+    async def post(self, ctx: discord.ApplicationContext):
         view = JobAreaSelectView(self)
         await ctx.respond("Choose the job area:", view=view, ephemeral=True)
+
+    @eventjob.command(name="post", description="Post an event job from an event template")
+    @jobs_poster_or_admin()
+    async def event_post(self, ctx: discord.ApplicationContext, template: str):
+        return await self._open_template_post_modal(ctx, template, require_event=True)
+
+    @eventtemplate.command(name="add", description="(Admin) Create an event template (modal)")
+    @admin_only()
+    async def event_template_add(self, ctx: discord.ApplicationContext):
+        await ctx.send_modal(JobTemplateModal(self, force_category="event"))
+
+    @eventtemplate.command(name="update", description="(Admin) Update an event template (modal)")
+    @admin_only()
+    async def event_template_update(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        if str(row[7] or "").strip().lower() != "event":
+            return await ctx.respond(f"Template `{name}` is not an event template.", ephemeral=True)
+        await ctx.send_modal(JobTemplateModal(self, existing=row, force_category="event"))
+
+    @eventtemplate.command(name="list", description="List event templates")
+    async def event_template_list(self, ctx: discord.ApplicationContext, include_inactive: bool = True):
+        rows = await self.db.list_job_templates(include_inactive=bool(include_inactive), limit=100)
+        event_rows = [r for r in rows if str(r[7] or "").strip().lower() == "event"]
+        if not event_rows:
+            return await ctx.respond("No event templates found.", ephemeral=True)
+
+        lines = []
+        for r in event_rows[:25]:
+            template_id, name, default_title, default_description, rmin, rmax, tier_required, category, active = r
+            state = "active" if int(active) == 1 else "inactive"
+            lines.append(
+                f"• `{name}` ({state}) — reward `{int(rmin):,}`-`{int(rmax):,}`, tier `{int(tier_required)}+`"
+            )
+        await ctx.respond("\n".join(lines), ephemeral=True)
+
+    @eventtemplate.command(name="view", description="View one event template")
+    async def event_template_view(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        if str(row[7] or "").strip().lower() != "event":
+            return await ctx.respond(f"Template `{name}` is not an event template.", ephemeral=True)
+
+        template_id, tname, title, description, rmin, rmax, tier_required, category, active = row
+        state = "active" if int(active) == 1 else "inactive"
+        await ctx.respond(
+            f"Event Template `{tname}` (id `{template_id}`, {state})\n"
+            f"Title: {title}\n"
+            f"Description: {description}\n"
+            f"Reward range: `{int(rmin):,}`-`{int(rmax):,}`\n"
+            f"Tier required: `{int(tier_required)}`",
+            ephemeral=True,
+        )
+
+    @eventtemplate.command(name="clone", description="(Admin) Clone an event template")
+    @admin_only()
+    async def event_template_clone(self, ctx: discord.ApplicationContext, source_name: str, new_name: str):
+        row = await self.db.get_job_template_by_name(str(source_name))
+        if not row:
+            return await ctx.respond(f"Template `{source_name}` not found.", ephemeral=True)
+        if str(row[7] or "").strip().lower() != "event":
+            return await ctx.respond(f"Template `{source_name}` is not an event template.", ephemeral=True)
+
+        _, _, title, description, rmin, rmax, tier_required, category, active = row
+        template_id = await self.db.upsert_job_template(
+            name=str(new_name).strip(),
+            default_title=str(title),
+            default_description=str(description),
+            default_reward_min=int(rmin),
+            default_reward_max=int(rmax),
+            default_tier_required=int(tier_required),
+            category="event",
+            active=bool(int(active) == 1),
+        )
+        await ctx.respond(f"Event template cloned: `{source_name}` -> `{new_name}` (id `{template_id}`).", ephemeral=True)
+
+    @eventtemplate.command(name="disable", description="(Admin) Disable an event template")
+    @admin_only()
+    async def event_template_disable(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row or str(row[7] or "").strip().lower() != "event":
+            return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
+        ok = await self.db.set_job_template_active(name=name, active=False)
+        if not ok:
+            return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
+        await ctx.respond(f"Event template `{name}` disabled.", ephemeral=True)
+
+    @eventtemplate.command(name="enable", description="(Admin) Enable an event template")
+    @admin_only()
+    async def event_template_enable(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row or str(row[7] or "").strip().lower() != "event":
+            return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
+        ok = await self.db.set_job_template_active(name=name, active=True)
+        if not ok:
+            return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
+        await ctx.respond(f"Event template `{name}` enabled.", ephemeral=True)
+
+    @eventtemplate.command(name="delete", description="(Admin) Delete an event template")
+    @admin_only()
+    async def event_template_delete(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row or str(row[7] or "").strip().lower() != "event":
+            return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
+        ok = await self.db.delete_job_template(name=name)
+        if not ok:
+            return await ctx.respond(f"Event template `{name}` not found.", ephemeral=True)
+        await ctx.respond(f"Event template `{name}` deleted.", ephemeral=True)
 
     @jobtemplates.command(name="add", description="(Admin) Create a job template (modal)")
     @admin_only()
