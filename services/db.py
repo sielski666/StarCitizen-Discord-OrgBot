@@ -735,6 +735,14 @@ class Database:
         await self.conn.commit()
         return cur.rowcount > 0
 
+    async def delete_job_template(self, name: str) -> bool:
+        cur = await self.conn.execute(
+            "DELETE FROM job_templates WHERE lower(name)=lower(?)",
+            (str(name).strip(),),
+        )
+        await self.conn.commit()
+        return cur.rowcount > 0
+
     async def claim_job(self, job_id: int, claimed_by: int) -> bool:
         await self._begin()
         try:

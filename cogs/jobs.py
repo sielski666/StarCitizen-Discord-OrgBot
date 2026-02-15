@@ -946,6 +946,24 @@ class JobsCog(commands.Cog):
 
         await ctx.respond("\n".join(lines), ephemeral=True)
 
+    @jobtemplates.command(name="view", description="View one template in detail")
+    async def template_view(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+
+        template_id, tname, title, description, rmin, rmax, tier_required, category, active = row
+        state = "active" if int(active) == 1 else "inactive"
+        await ctx.respond(
+            f"Template `{tname}` (id `{template_id}`, {state})\n"
+            f"Title: {title}\n"
+            f"Description: {description}\n"
+            f"Reward range: `{int(rmin):,}`-`{int(rmax):,}`\n"
+            f"Tier required: `{int(tier_required)}`\n"
+            f"Category: `{category or 'general'}`",
+            ephemeral=True,
+        )
+
     @jobtemplates.command(name="disable", description="(Admin) Disable a job template")
     @admin_only()
     async def template_disable(self, ctx: discord.ApplicationContext, name: str):
@@ -961,6 +979,14 @@ class JobsCog(commands.Cog):
         if not ok:
             return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
         await ctx.respond(f"Template `{name}` enabled.", ephemeral=True)
+
+    @jobtemplates.command(name="delete", description="(Admin) Delete a template")
+    @admin_only()
+    async def template_delete(self, ctx: discord.ApplicationContext, name: str):
+        ok = await self.db.delete_job_template(name=name)
+        if not ok:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        await ctx.respond(f"Template `{name}` deleted.", ephemeral=True)
 
     @jobs.command(name="attend", description="Join an event job attendance list")
     async def attend(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
