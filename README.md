@@ -129,6 +129,9 @@ What it does:
 - restarts `starcitizen-orgbot`
 - auto-rolls back to previous commit if update fails
 
+For full install/update paths (git auto-update vs manual ZIP updates), see docs page:
+- `website/docs/13-install-update-guide.md`
+
 On startup, the bot:
 
 - connects DB

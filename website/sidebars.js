@@ -12,6 +12,7 @@ const sidebars = {
     'finance-treasury-commands',
     'account-commands',
     'jobtest-commands',
+    'install-update-guide',
     'troubleshooting',
     'feedback-known-issues',
     'changelog',
