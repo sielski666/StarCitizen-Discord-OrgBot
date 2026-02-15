@@ -1,5 +1,9 @@
 # 01 - Quick Start
 
+## Links
+- Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
+- Discord: ADD_DISCORD_INVITE_LINK_HERE
+
 ## Baseline checks
 - Copy `.env.example` -> `.env` (remove `.example` suffix)
 - Manually set `DISCORD_TOKEN` in `.env`
@@ -11,8 +15,8 @@
 ## First operational flow
 1. Create event template: `/eventtemplate add`
 2. Post event job: `/eventjob post template:<name>`
-3. Claim/complete job
-4. Finance/admin confirms with `/jobs confirm`
+3. RSVP participants via linked Discord Scheduled Event
+4. Admin marks complete, then finance/admin confirms with `/jobs confirm`
 5. Run `/finance reconcile`
 
 ## Non-event flow quick test
