@@ -583,8 +583,28 @@ class JobWorkflowView(discord.ui.View):
 
         if status != "completed":
             return await interaction.followup.send(f"Job must be COMPLETED before confirmation (status: {_status_text(status)}).", ephemeral=True)
-        if not claimed_by:
-            return await interaction.followup.send("No claimer to reward.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id_db))
+        payout_targets: list[tuple[int, int]] = []
+
+        if category == "event":
+            attendees = await self.db.list_event_attendees(int(job_id_db))
+            attendee_ids = [int(a[0]) for a in attendees]
+            if not attendee_ids:
+                return await interaction.followup.send("No attendees tracked for this event job.", ephemeral=True)
+
+            base = int(reward) // len(attendee_ids)
+            remainder = int(reward) % len(attendee_ids)
+            for i, uid in enumerate(attendee_ids):
+                amt = int(base) + (1 if i < remainder else 0)
+                if amt > 0:
+                    payout_targets.append((uid, amt))
+            if not payout_targets:
+                return await interaction.followup.send("Event reward is too low to distribute.", ephemeral=True)
+        else:
+            if not claimed_by:
+                return await interaction.followup.send("No claimer to reward.", ephemeral=True)
+            payout_targets.append((int(claimed_by), int(reward)))
 
         try:
             ok = await self.db.mark_paid(job_id_db)
@@ -594,36 +614,36 @@ class JobWorkflowView(discord.ui.View):
         if not ok:
             return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
 
-        await self.db.add_balance(
-            discord_id=int(claimed_by),
-            amount=int(reward),
-            tx_type="payout",
-            reference=f"job:{job_id_db}|by:{interaction.user.id}",
-        )
+        rep_added_total = 0
+        for uid, amount in payout_targets:
+            await self.db.add_balance(
+                discord_id=int(uid),
+                amount=int(amount),
+                tx_type="payout",
+                reference=f"job:{job_id_db}|by:{interaction.user.id}",
+            )
 
-        before_level = await self.db.get_level(int(claimed_by), per_level=LEVEL_PER_REP)
-
-        rep_added = 0
-        if int(REP_PER_JOB_PAYOUT) > 0:
-            try:
-                await self.db.add_rep(
-                    discord_id=int(claimed_by),
-                    amount=int(REP_PER_JOB_PAYOUT),
-                    reference=f"job:{job_id_db}|confirm_by:{interaction.user.id}",
-                )
-                rep_added = int(REP_PER_JOB_PAYOUT)
-            except Exception:
-                logger.debug("Failed adding rep for job confirm", exc_info=True)
-
-        if interaction.guild:
-            member_obj = interaction.guild.get_member(int(claimed_by))
-            if member_obj is None:
+            before_level = await self.db.get_level(int(uid), per_level=LEVEL_PER_REP)
+            if int(REP_PER_JOB_PAYOUT) > 0:
                 try:
-                    member_obj = await interaction.guild.fetch_member(int(claimed_by))
+                    await self.db.add_rep(
+                        discord_id=int(uid),
+                        amount=int(REP_PER_JOB_PAYOUT),
+                        reference=f"job:{job_id_db}|confirm_by:{interaction.user.id}",
+                    )
+                    rep_added_total += int(REP_PER_JOB_PAYOUT)
                 except Exception:
-                    member_obj = None
-            if member_obj is not None:
-                await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
+                    logger.debug("Failed adding rep for job confirm", exc_info=True)
+
+            if interaction.guild:
+                member_obj = interaction.guild.get_member(int(uid))
+                if member_obj is None:
+                    try:
+                        member_obj = await interaction.guild.fetch_member(int(uid))
+                    except Exception:
+                        member_obj = None
+                if member_obj is not None:
+                    await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
 
         min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
         updated = _job_embed(job_id_db, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
@@ -638,8 +658,16 @@ class JobWorkflowView(discord.ui.View):
         if thread_id and interaction.guild:
             try:
                 thread = interaction.guild.get_thread(thread_id) or await interaction.guild.fetch_channel(thread_id)
-                extra = f"\n+`{rep_added}` Reputation" if rep_added else ""
-                await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{claimed_by}>. Status: **ORG POINTS REWARDED**.{extra}")
+                if category == "event":
+                    extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
+                    await thread.send(
+                        f"💰 Event payout complete: `{reward:,}` split across `{len(payout_targets)}` attendees."
+                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                    )
+                else:
+                    target_uid = int(payout_targets[0][0])
+                    extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
+                    await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{target_uid}>. Status: **ORG POINTS REWARDED**.{extra}")
             except Exception:
                 logger.debug("Failed sending reward thread update", exc_info=True)
 
@@ -891,8 +919,28 @@ class JobsCog(commands.Cog):
 
         if status != "completed":
             return await ctx.respond(f"Job must be COMPLETED before confirmation (status: {_status_text(status)}).", ephemeral=True)
-        if not claimed_by:
-            return await ctx.respond("No claimer to reward.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(jid))
+        payout_targets: list[tuple[int, int]] = []
+
+        if category == "event":
+            attendees = await self.db.list_event_attendees(int(jid))
+            attendee_ids = [int(a[0]) for a in attendees]
+            if not attendee_ids:
+                return await ctx.respond("No attendees tracked for this event job.", ephemeral=True)
+
+            base = int(reward) // len(attendee_ids)
+            remainder = int(reward) % len(attendee_ids)
+            for i, uid in enumerate(attendee_ids):
+                amt = int(base) + (1 if i < remainder else 0)
+                if amt > 0:
+                    payout_targets.append((uid, amt))
+            if not payout_targets:
+                return await ctx.respond("Event reward is too low to distribute.", ephemeral=True)
+        else:
+            if not claimed_by:
+                return await ctx.respond("No claimer to reward.", ephemeral=True)
+            payout_targets.append((int(claimed_by), int(reward)))
 
         try:
             ok = await self.db.mark_paid(jid)
@@ -902,43 +950,41 @@ class JobsCog(commands.Cog):
         if not ok:
             return await ctx.respond("Could not mark as paid (maybe already paid).", ephemeral=True)
 
-        # Reward Org Points
-        await self.db.add_balance(
-            discord_id=int(claimed_by),
-            amount=int(reward),
-            tx_type="payout",
-            reference=f"job:{jid}|by:{ctx.author.id}",
-        )
+        rep_added_total = 0
+        for uid, amount in payout_targets:
+            await self.db.add_balance(
+                discord_id=int(uid),
+                amount=int(amount),
+                tx_type="payout",
+                reference=f"job:{jid}|by:{ctx.author.id}",
+            )
 
-        # Rep -> level -> role pipeline (with optional DM rank-up)
-        member_obj: discord.Member | None = None
-        if ctx.guild:
-            member_obj = ctx.guild.get_member(int(claimed_by))
-            if member_obj is None:
+            member_obj: discord.Member | None = None
+            if ctx.guild:
+                member_obj = ctx.guild.get_member(int(uid))
+                if member_obj is None:
+                    try:
+                        member_obj = await ctx.guild.fetch_member(int(uid))
+                    except Exception:
+                        member_obj = None
+
+            before_level = None
+            if member_obj:
+                before_level = await self.db.get_level(member_obj.id, per_level=LEVEL_PER_REP)
+
+            if int(REP_PER_JOB_PAYOUT) > 0:
                 try:
-                    member_obj = await ctx.guild.fetch_member(int(claimed_by))
+                    await self.db.add_rep(
+                        discord_id=int(uid),
+                        amount=int(REP_PER_JOB_PAYOUT),
+                        reference=f"job:{jid}|payout_by:{ctx.author.id}",
+                    )
+                    rep_added_total += int(REP_PER_JOB_PAYOUT)
                 except Exception:
-                    member_obj = None
+                    pass
 
-        before_level = None
-        if member_obj:
-            before_level = await self.db.get_level(member_obj.id, per_level=LEVEL_PER_REP)
-
-        rep_added = 0
-        if int(REP_PER_JOB_PAYOUT) > 0:
-            try:
-                await self.db.add_rep(
-                    discord_id=int(claimed_by),
-                    amount=int(REP_PER_JOB_PAYOUT),
-                    reference=f"job:{jid}|payout_by:{ctx.author.id}",
-                )
-                rep_added = int(REP_PER_JOB_PAYOUT)
-            except Exception:
-                rep_added = 0
-
-        # Sync tier roles + DM if rank-up
-        if member_obj and before_level is not None:
-            await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
+            if member_obj and before_level is not None:
+                await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
 
         # Update original job message
         try:
@@ -959,8 +1005,16 @@ class JobsCog(commands.Cog):
         if thread_id:
             try:
                 thread = ctx.guild.get_thread(thread_id) or await ctx.guild.fetch_channel(thread_id)
-                extra = f"\n+`{rep_added}` Reputation" if rep_added else ""
-                await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{claimed_by}>. Status: **ORG POINTS REWARDED**.{extra}")
+                if category == "event":
+                    extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
+                    await thread.send(
+                        f"💰 Event payout complete: `{reward:,}` split across `{len(payout_targets)}` attendees."
+                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                    )
+                else:
+                    target_uid = int(payout_targets[0][0])
+                    extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
+                    await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{target_uid}>. Status: **ORG POINTS REWARDED**.{extra}")
             except Exception:
                 pass
 
