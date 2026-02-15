@@ -12,6 +12,8 @@ Event jobs are jobs with category `event` and scheduled-event attendance integra
 
 ## Important behavior
 - Event jobs are RSVP-driven (no claim path).
+- Open event cards show participants and status: **On-boarding / accepting participants**.
+- Locked event cards show: **No longer accepting participants**.
 - Attendance can be locked/unlocked by finance/admin.
 - Confirm auto-snapshots + locks if needed.
 - Snapshot prevents last-second RSVP changes from affecting payout.

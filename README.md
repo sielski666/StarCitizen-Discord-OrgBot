@@ -12,8 +12,10 @@ A Discord bot for managing org jobs, payouts, treasury, rep/levels, and account 
 ## Features
 
 - **Jobs flow**
-  - Post jobs
-  - Accept jobs with persistent buttons
+  - Post normal jobs with area-first flow (`/jobs post`)
+  - Event jobs via templates (`/eventjob post template:<name>`)
+  - Event RSVP attendance sync (add/remove from Scheduled Event)
+  - Event attendance lock/snapshot + manual attendee correction
   - Complete, payout, cancel, and reopen jobs
 - **Account flow**
   - User account overview
@@ -91,7 +93,8 @@ Required keys used by the bot:
 - `FINANCE_ROLE_ID`
 - `JOBS_ADMIN_ROLE_ID`
 - `EVENT_HANDLER_ROLE_ID` (required to restrict event template posting)
-- `JOBS_CHANNEL_ID`
+- `JOB_CATEGORY_CHANNEL_MAP` (area/category -> channel routing map)
+- `JOBS_CHANNEL_ID` (compat/fallback; setup derives this from general map channel)
 - `TREASURY_CHANNEL_ID`
 - `SHARES_SELL_CHANNEL_ID`
 - `FINANCE_CHANNEL_ID` (compat alias; usually same as `TREASURY_CHANNEL_ID`)
@@ -112,7 +115,8 @@ python bot.py
 On startup, the bot:
 
 - connects DB
-- registers persistent UI views (cashout + job accept)
+- registers persistent UI views (cashout + job workflow)
+- refreshes recent event job cards so attendee display/state is current
 - syncs application commands to `GUILD_ID` (if provided)
 
 ## Notes

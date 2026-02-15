@@ -16,10 +16,12 @@
 ---
 
 ## `/jobs complete job_id:<id>`
-**Who:** claimer or admin (non-event jobs)
+**Who:**
+- Non-event jobs: claimer or admin
+- Event jobs: admin (no claim path)
 
 **How to use:**
-- Run after work is done.
+- Run after work/event is done.
 
 **What it does:**
 - Moves job to `completed`.
