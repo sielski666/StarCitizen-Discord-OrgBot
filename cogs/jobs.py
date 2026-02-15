@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+from datetime import timedelta
 import discord
 from discord.ext import commands
 
@@ -374,9 +375,27 @@ class JobPostModal(discord.ui.Modal):
             files = _logo_files()
             await msg.edit(embed=embed, view=JobWorkflowView(self.cog.db, status="open"), files=files if files else None)
 
+            event_note = ""
+            if (self.category or "").strip().lower() == "event" and interaction.guild:
+                try:
+                    start_time = discord.utils.utcnow() + timedelta(minutes=15)
+                    end_time = start_time + timedelta(hours=2)
+                    sched = await interaction.guild.create_scheduled_event(
+                        name=f"Job #{job_id}: {title[:80]}",
+                        description=(desc[:1000] if desc else "Org event job"),
+                        start_time=start_time,
+                        end_time=end_time,
+                        location="See linked job post",
+                    )
+                    if sched is not None:
+                        await self.cog.db.link_event_job(int(sched.id), int(job_id))
+                        event_note = f"\nEvent created: <https://discord.com/events/{interaction.guild.id}/{sched.id}>"
+                except Exception:
+                    logger.debug("Failed creating scheduled event for event-category job", exc_info=True)
+
             posted_in = f" in <#{channel.id}>" if getattr(channel, "id", None) else ""
             await interaction.followup.send(
-                f"Job #{job_id} posted{posted_in}. Tier: {_tier_display(self.min_level)}",
+                f"Job #{job_id} posted{posted_in}. Tier: {_tier_display(self.min_level)}{event_note}",
                 ephemeral=True,
             )
 
@@ -678,6 +697,26 @@ class JobsCog(commands.Cog):
     def __init__(self, bot: commands.Bot, db: Database):
         self.bot = bot
         self.db = db
+
+    @commands.Cog.listener()
+    async def on_raw_scheduled_event_user_add(self, payload: discord.RawScheduledEventSubscription):
+        try:
+            job_id = await self.db.get_job_id_by_event(int(payload.event_id))
+            if not job_id:
+                return
+            await self.db.add_event_attendee(int(job_id), int(payload.user_id))
+        except Exception:
+            logger.debug("Failed syncing scheduled event RSVP add", exc_info=True)
+
+    @commands.Cog.listener()
+    async def on_raw_scheduled_event_user_remove(self, payload: discord.RawScheduledEventSubscription):
+        try:
+            job_id = await self.db.get_job_id_by_event(int(payload.event_id))
+            if not job_id:
+                return
+            await self.db.remove_event_attendee(int(job_id), int(payload.user_id))
+        except Exception:
+            logger.debug("Failed syncing scheduled event RSVP remove", exc_info=True)
 
     jobs = discord.SlashCommandGroup("jobs", "Job board commands")
     jobtemplates = discord.SlashCommandGroup("jobtemplates", "Job template admin commands")

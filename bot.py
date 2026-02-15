@@ -20,6 +20,8 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0") or "0")
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
+if hasattr(intents, "guild_scheduled_events"):
+    intents.guild_scheduled_events = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 

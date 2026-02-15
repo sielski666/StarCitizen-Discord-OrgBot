@@ -124,6 +124,12 @@ CREATE TABLE IF NOT EXISTS job_event_attendance (
   joined_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (job_id, discord_id)
 );
+
+CREATE TABLE IF NOT EXISTS job_event_links (
+  event_id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -575,6 +581,20 @@ class Database:
             (int(job_id),),
         )
         return await cur.fetchall()
+
+    async def link_event_job(self, event_id: int, job_id: int):
+        await self.conn.execute(
+            "INSERT OR REPLACE INTO job_event_links(event_id, job_id) VALUES(?,?)",
+            (int(event_id), int(job_id)),
+        )
+        await self.conn.commit()
+
+    async def get_job_id_by_event(self, event_id: int) -> int | None:
+        cur = await self.conn.execute("SELECT job_id FROM job_event_links WHERE event_id=?", (int(event_id),))
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return int(row[0])
 
     async def list_job_templates(self, include_inactive: bool = True, limit: int = 50):
         if include_inactive:
