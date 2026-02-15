@@ -128,4 +128,4 @@ On startup, the bot:
 
 ## License
 
-Add your preferred license here (MIT/Apache-2.0/etc.).
+MIT
