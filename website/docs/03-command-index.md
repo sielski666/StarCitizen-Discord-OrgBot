@@ -33,7 +33,6 @@ This page is the command map. Use the detailed pages for exact usage and behavio
 - `/eventtemplate enable`
 - `/eventtemplate delete`
 
-> Legacy note: `/jobtemplates ...` commands are deprecated aliases and now point to `/eventtemplate ...`.
 
 ## Job Test (admin)
 - `/jobtest event_sync_check`

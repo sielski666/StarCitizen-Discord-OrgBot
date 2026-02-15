@@ -4,10 +4,10 @@ A Discord bot for managing org jobs, payouts, treasury, rep/levels, and account 
 
 ## Documentation
 
-- **Operator Manual (GitBook):** [Open Manual](https://app.gitbook.com/invite/w8AulwFn13HCk5VnwZ2D/OeUbPgQ5SUT27afumHrA)
-- **Repo docs source (synced to GitBook):** `docs/manual/`
+- **Operator Manual (Docusaurus):** [Open Manual](https://sielski666.github.io/StarCitizen-Discord-OrgBot/)
+- **Repo docs source:** `website/docs/`
 
-> Tip: keep this README as a project overview; maintain full operational procedures in GitBook.
+> Tip: keep this README as a project overview; maintain full operational procedures in Docusaurus docs.
 
 ## Features
 

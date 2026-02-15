@@ -37,5 +37,3 @@ Posts an event job from an event template.
 
 ---
 
-### Deprecated aliases
-`/jobtemplates ...` commands are deprecated and return guidance to use `/eventtemplate ...`.
