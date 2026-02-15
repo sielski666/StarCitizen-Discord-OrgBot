@@ -2,6 +2,13 @@
 
 A Discord bot for managing org jobs, payouts, treasury, rep/levels, and account cashouts.
 
+## Documentation
+
+- **Operator Manual (GitBook):** `ADD_GITBOOK_URL_HERE`
+- **Repo docs source (synced to GitBook):** `docs/manual/`
+
+> Tip: keep this README as a project overview; maintain full operational procedures in GitBook.
+
 ## Features
 
 - **Jobs flow**
