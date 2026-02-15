@@ -142,6 +142,7 @@ def _job_embed(
     created_by: int,
     claimed_by: int | None,
     min_level: int = 0,
+    is_event: bool = False,
 ) -> discord.Embed:
     e = discord.Embed(
         title=f"📌 CONTRACT • Job #{job_id}",
@@ -160,10 +161,16 @@ def _job_embed(
 
     e.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
     e.add_field(name="Posted by", value=f"<@{created_by}>", inline=True)
-    e.add_field(name="Claimed by", value=f"<@{claimed_by}>" if claimed_by else "—", inline=True)
+    if is_event:
+        e.add_field(name="Participation", value="RSVP via linked event", inline=True)
+    else:
+        e.add_field(name="Claimed by", value=f"<@{claimed_by}>" if claimed_by else "—", inline=True)
     e.add_field(name="\u200b", value="\u200b", inline=True)
 
-    e.set_footer(text="Click Accept to claim. A thread is created automatically.")
+    if is_event:
+        e.set_footer(text="Event job: participation is RSVP-based. No claim required.")
+    else:
+        e.set_footer(text="Click Accept to claim. A thread is created automatically.")
     return e
 
 
@@ -437,10 +444,25 @@ class JobPostModal(discord.ui.Modal):
                 await msg.delete()
                 return await interaction.followup.send(str(e), ephemeral=True)
 
-            embed = _job_embed(job_id, title, desc, reward, "open", interaction.user.id, None, min_level=self.min_level)
+            is_event_job = str(self.category or "").strip().lower() == "event"
+            embed = _job_embed(
+                job_id,
+                title,
+                desc,
+                reward,
+                "open",
+                interaction.user.id,
+                None,
+                min_level=self.min_level,
+                is_event=is_event_job,
+            )
 
             files = _logo_files()
-            await msg.edit(embed=embed, view=JobWorkflowView(self.cog.db, status="open"), files=files if files else None)
+            await msg.edit(
+                embed=embed,
+                view=JobWorkflowView(self.cog.db, status="open", is_event=is_event_job),
+                files=files if files else None,
+            )
 
             event_note = ""
             if (self.category or "").strip().lower() == "event" and interaction.guild:
@@ -585,9 +607,13 @@ class JobTemplateModal(discord.ui.Modal):
 class JobWorkflowView(discord.ui.View):
     """Three-stage job workflow via buttons: Accept -> Complete -> Confirm."""
 
-    def __init__(self, db: Database, status: str = "open"):
+    def __init__(self, db: Database, status: str = "open", is_event: bool = False):
         super().__init__(timeout=None)
         self.db = db
+        self.is_event = bool(is_event)
+
+        if self.is_event:
+            self.accept_btn.disabled = True
 
         if status == "open":
             self.complete_btn.disabled = True
@@ -721,12 +747,24 @@ class JobWorkflowView(discord.ui.View):
             return await interaction.followup.send(f"Cannot complete Job #{job_id_db} (status: {_status_text(status)}).", ephemeral=True)
 
         min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
-        updated = _job_embed(job_id_db, title, description, int(reward), "completed", created_by, claimed_by, min_level=min_level)
+        category = await self.db.get_job_category(int(job_id_db))
+        is_event_job = str(category or "").strip().lower() == "event"
+        updated = _job_embed(
+            job_id_db,
+            title,
+            description,
+            int(reward),
+            "completed",
+            created_by,
+            claimed_by,
+            min_level=min_level,
+            is_event=is_event_job,
+        )
 
         files = _logo_files()
         await interaction.message.edit(
             embed=updated,
-            view=JobWorkflowView(self.db, status="completed"),
+            view=JobWorkflowView(self.db, status="completed", is_event=is_event_job),
             files=files if files else None,
         )
 
@@ -860,12 +898,23 @@ class JobWorkflowView(discord.ui.View):
             await self.db.conn.commit()
 
         min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
-        updated = _job_embed(job_id_db, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
+        is_event_job = str(category or "").strip().lower() == "event"
+        updated = _job_embed(
+            job_id_db,
+            title,
+            description,
+            int(reward),
+            "paid",
+            created_by,
+            claimed_by,
+            min_level=min_level,
+            is_event=is_event_job,
+        )
 
         files = _logo_files()
         await interaction.message.edit(
             embed=updated,
-            view=JobWorkflowView(self.db, status="paid"),
+            view=JobWorkflowView(self.db, status="paid", is_event=is_event_job),
             files=files if files else None,
         )
 
@@ -1389,9 +1438,25 @@ class JobsCog(commands.Cog):
             if msg.embeds:
                 min_level = _extract_min_level_from_embed(msg.embeds[0])
 
-            updated = _job_embed(jid, title, description, int(reward), "completed", created_by, claimed_by, min_level=min_level)
+            category = await self.db.get_job_category(int(jid))
+            is_event_job = str(category or "").strip().lower() == "event"
+            updated = _job_embed(
+                jid,
+                title,
+                description,
+                int(reward),
+                "completed",
+                created_by,
+                claimed_by,
+                min_level=min_level,
+                is_event=is_event_job,
+            )
             files = _logo_files()
-            await msg.edit(embed=updated, view=JobWorkflowView(self.db, status="completed"), files=files if files else None)
+            await msg.edit(
+                embed=updated,
+                view=JobWorkflowView(self.db, status="completed", is_event=is_event_job),
+                files=files if files else None,
+            )
         except Exception:
             pass
 
@@ -1527,9 +1592,24 @@ class JobsCog(commands.Cog):
             if msg.embeds:
                 min_level = _extract_min_level_from_embed(msg.embeds[0])
 
-            updated = _job_embed(jid, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
+            is_event_job = str(category or "").strip().lower() == "event"
+            updated = _job_embed(
+                jid,
+                title,
+                description,
+                int(reward),
+                "paid",
+                created_by,
+                claimed_by,
+                min_level=min_level,
+                is_event=is_event_job,
+            )
             files = _logo_files()
-            await msg.edit(embed=updated, view=JobWorkflowView(self.db, status="paid"), files=files if files else None)
+            await msg.edit(
+                embed=updated,
+                view=JobWorkflowView(self.db, status="paid", is_event=is_event_job),
+                files=files if files else None,
+            )
         except Exception:
             pass
 
@@ -1590,7 +1670,19 @@ class JobsCog(commands.Cog):
             if msg.embeds:
                 min_level = _extract_min_level_from_embed(msg.embeds[0])
 
-            updated = _job_embed(jid, title, description, int(reward), "cancelled", created_by, claimed_by, min_level=min_level)
+            category = await self.db.get_job_category(int(jid))
+            is_event_job = str(category or "").strip().lower() == "event"
+            updated = _job_embed(
+                jid,
+                title,
+                description,
+                int(reward),
+                "cancelled",
+                created_by,
+                claimed_by,
+                min_level=min_level,
+                is_event=is_event_job,
+            )
             files = _logo_files()
             await msg.edit(embed=updated, view=None, files=files if files else None)
         except Exception:
@@ -1653,10 +1745,26 @@ class JobsCog(commands.Cog):
             if msg.embeds:
                 min_level = _extract_min_level_from_embed(msg.embeds[0])
 
-            updated = _job_embed(jid, title, description, int(reward), "open", created_by, None, min_level=min_level)
+            category = await self.db.get_job_category(int(jid))
+            is_event_job = str(category or "").strip().lower() == "event"
+            updated = _job_embed(
+                jid,
+                title,
+                description,
+                int(reward),
+                "open",
+                created_by,
+                None,
+                min_level=min_level,
+                is_event=is_event_job,
+            )
 
             files = _logo_files()
-            await msg.edit(embed=updated, view=JobWorkflowView(self.db, status="open"), files=files if files else None)
+            await msg.edit(
+                embed=updated,
+                view=JobWorkflowView(self.db, status="open", is_event=is_event_job),
+                files=files if files else None,
+            )
         except Exception:
             pass
 
