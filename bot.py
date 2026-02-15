@@ -16,6 +16,7 @@ from cogs.setup import SetupCog
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0") or "0")
+OWNER_DISCORD_ID = int(os.getenv("OWNER_DISCORD_ID", "0") or "0")
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -54,6 +55,24 @@ async def on_ready():
     if GUILD_ID != 0:
         await bot.sync_commands(guild_ids=[GUILD_ID])
         print(f"Synced slash commands to guild {GUILD_ID}")
+
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    try:
+        if interaction.guild_id is None and interaction.type == discord.InteractionType.application_command:
+            uid = int(interaction.user.id) if interaction.user else 0
+            if OWNER_DISCORD_ID and uid != int(OWNER_DISCORD_ID):
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "DM commands are currently restricted to the bot owner.",
+                        ephemeral=True,
+                    )
+                return
+    except Exception:
+        pass
+
+    await bot.process_application_commands(interaction)
 
 
 # Register cogs
