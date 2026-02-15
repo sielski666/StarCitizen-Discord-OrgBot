@@ -229,10 +229,45 @@ async def _sync_member_tier_roles(
     }
 
 
-class JobTierSelectView(discord.ui.View):
+class JobAreaSelectView(discord.ui.View):
     def __init__(self, cog: "JobsCog"):
         super().__init__(timeout=120)
         self.cog = cog
+
+        options = [
+            discord.SelectOption(label="General", value="general", description="Miscellaneous jobs"),
+            discord.SelectOption(label="Salvage", value="salvage", description="Salvage-focused jobs"),
+            discord.SelectOption(label="Mining", value="mining", description="Mining-focused jobs"),
+            discord.SelectOption(label="Hauling", value="hauling", description="Hauling-focused jobs"),
+            discord.SelectOption(label="Event", value="event", description="Event jobs (scheduled event link)"),
+        ]
+
+        self.select = discord.ui.Select(
+            placeholder="Choose job area…",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+        self.select.callback = self._on_select  # type: ignore
+        self.add_item(self.select)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        area = str(self.select.values[0]).strip().lower()
+        self.select.disabled = True
+        self.select.placeholder = f"Area selected ✅ ({area.title()})"
+
+        tier_view = JobTierSelectView(self.cog, category=area)
+        await interaction.response.edit_message(
+            content=f"Area selected: **{area.title()}**. Now choose the job tier:",
+            view=tier_view,
+        )
+
+
+class JobTierSelectView(discord.ui.View):
+    def __init__(self, cog: "JobsCog", category: str = "general"):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.category = str(category).strip().lower() or "general"
 
         options = []
         for t in JOB_TIERS[:25]:
@@ -274,7 +309,13 @@ class JobTierSelectView(discord.ui.View):
 
         self.mark_selected(level)
         await interaction.response.send_modal(
-            JobPostModal(self.cog, min_level=level, source_message=interaction.message, source_view=self)
+            JobPostModal(
+                self.cog,
+                min_level=level,
+                source_message=interaction.message,
+                source_view=self,
+                category=self.category,
+            )
         )
 
 
@@ -284,7 +325,7 @@ class JobPostModal(discord.ui.Modal):
         cog: "JobsCog",
         min_level: int,
         source_message: discord.Message | None = None,
-        source_view: JobTierSelectView | None = None,
+        source_view: discord.ui.View | None = None,
         prefill_title: str | None = None,
         prefill_description: str | None = None,
         prefill_reward: int | None = None,
@@ -403,7 +444,10 @@ class JobPostModal(discord.ui.Modal):
             if self.source_message and self.source_view:
                 try:
                     await self.source_message.edit(
-                        content=f"Tier selected ✅ ({_tier_display(self.min_level)}). Job #{job_id} created.",
+                        content=(
+                            f"Area/Tier selected ✅ ({(self.category or 'general').title()} / {_tier_display(self.min_level)}). "
+                            f"Job #{job_id} created."
+                        ),
                         view=self.source_view,
                     )
                 except Exception:
@@ -918,8 +962,8 @@ class JobsCog(commands.Cog):
             )
             return
 
-        view = JobTierSelectView(self)
-        await ctx.respond("Choose the job tier:", view=view, ephemeral=True)
+        view = JobAreaSelectView(self)
+        await ctx.respond("Choose the job area:", view=view, ephemeral=True)
 
     @jobtemplates.command(name="add", description="(Admin) Create a job template (modal)")
     @admin_only()
