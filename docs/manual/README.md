@@ -1,20 +1,23 @@
 # StarCitizen OrgBot Manual
 
-Operator-first manual for setup, daily use, event workflows, and finance controls.
+Use this manual in order.
 
-## Recommended reading order
-1. [Quick Start](quick-start.md)
-2. [Setup](setup.md)
-3. [Command Reference](command-reference.md)
-4. [Job Templates](job-templates.md)
-5. [Event Jobs](event-jobs.md)
-6. [Finance & Reconcile](finance-reconcile.md)
-7. [Troubleshooting](troubleshooting.md)
-8. [Feedback & Known Issues](feedback-known-issues.md)
-9. [Changelog](changelog.md)
+## Recommended order (most important first)
+1. [01 - Setup](01-setup.md)
+2. [02 - Quick Start](02-quick-start.md)
+3. [03 - Command Index](03-command-index.md)
+4. [04 - Jobs Commands](04-jobs-commands.md)
+5. [05 - Job Template Commands](05-jobtemplates-commands.md)
+6. [06 - Event Jobs](06-event-jobs.md)
+7. [07 - Finance & Treasury Commands](07-finance-treasury-commands.md)
+8. [08 - Account Commands](08-account-commands.md)
+9. [09 - Job Test Commands](09-jobtest-commands.md)
+10. [10 - Troubleshooting](10-troubleshooting.md)
+11. [11 - Feedback & Known Issues](11-feedback-known-issues.md)
+12. [12 - Changelog](12-changelog.md)
 
 ## Role legend
 - **Admin**: full control
-- **Finance**: payouts, treasury, audits
-- **Jobs Admin**: job admin actions
-- **Event Handler**: can post event templates
+- **Finance**: payout + treasury + audits
+- **Jobs Admin**: job moderation actions
+- **Event Handler**: allowed to post event templates
