@@ -708,7 +708,10 @@ class JobWorkflowView(discord.ui.View):
 
             attendee_ids = await self.db.get_job_attendance_snapshot(int(job_id_db))
             if not attendee_ids:
-                return await interaction.followup.send("No attendees tracked for this event job.", ephemeral=True)
+                return await interaction.followup.send(
+                    "Attendance snapshot is empty. Run `/jobs attendance_sync` (or unlock/re-lock) before confirming.",
+                    ephemeral=True,
+                )
 
             base = int(reward) // len(attendee_ids)
             remainder = int(reward) % len(attendee_ids)
@@ -866,6 +869,7 @@ class JobsCog(commands.Cog):
 
     jobs = discord.SlashCommandGroup("jobs", "Job board commands")
     jobtemplates = discord.SlashCommandGroup("jobtemplates", "Job template admin commands")
+    jobtest = discord.SlashCommandGroup("jobtest", "Job event self-test/admin tools")
 
     @jobs.command(name="post", description="Create a job (tier dropdown + form)")
     @jobs_poster_or_admin()
@@ -929,6 +933,26 @@ class JobsCog(commands.Cog):
         if not row:
             return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
         await ctx.send_modal(JobTemplateModal(self, existing=row))
+
+    @jobtemplates.command(name="clone", description="(Admin) Clone a template to a new name")
+    @admin_only()
+    async def template_clone(self, ctx: discord.ApplicationContext, source_name: str, new_name: str):
+        row = await self.db.get_job_template_by_name(str(source_name))
+        if not row:
+            return await ctx.respond(f"Template `{source_name}` not found.", ephemeral=True)
+
+        _, _, title, description, rmin, rmax, tier_required, category, active = row
+        template_id = await self.db.upsert_job_template(
+            name=str(new_name).strip(),
+            default_title=str(title),
+            default_description=str(description),
+            default_reward_min=int(rmin),
+            default_reward_max=int(rmax),
+            default_tier_required=int(tier_required),
+            category=(str(category) if category else None),
+            active=bool(int(active) == 1),
+        )
+        await ctx.respond(f"Template cloned: `{source_name}` -> `{new_name}` (id `{template_id}`).", ephemeral=True)
 
     @jobtemplates.command(name="list", description="List job templates")
     async def template_list(self, ctx: discord.ApplicationContext, include_inactive: bool = True):
@@ -1075,6 +1099,9 @@ class JobsCog(commands.Cog):
         row = await self.db.get_job(int(job_id))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
+        status = str(row[6])
+        if status in ("paid", "cancelled"):
+            return await ctx.respond(f"This event is closed (status: {_status_text(status)}).", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
         if category != "event":
             return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
@@ -1087,6 +1114,97 @@ class JobsCog(commands.Cog):
         await ctx.respond(f"Attendance synced for Job #{int(job_id)}. Tracked attendees: `{int(count)}`.", ephemeral=True)
 
     # COMPLETE (Claimer OR Admin)
+    @jobtest.command(name="event_sync_check", description="(Admin) Check linked event + RSVP counts")
+    @admin_only()
+    async def event_sync_check(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        cur = await self.db.conn.execute("SELECT event_id FROM job_event_links WHERE job_id=?", (int(job_id),))
+        link = await cur.fetchone()
+        if not link:
+            return await ctx.respond("No linked scheduled event found for this job.", ephemeral=True)
+
+        event_id = int(link[0])
+        guild = ctx.guild
+        if guild is None:
+            return await ctx.respond("Guild context required.", ephemeral=True)
+
+        event = guild.get_scheduled_event(event_id)
+        if event is None:
+            try:
+                event = await guild.fetch_scheduled_event(event_id)
+            except Exception as e:
+                return await ctx.respond(f"Linked event fetch failed: {e}", ephemeral=True)
+
+        subs = 0
+        async for _ in event.subscribers(limit=None, as_member=True):
+            subs += 1
+
+        tracked = await self.db.list_event_attendees(int(job_id))
+        await ctx.respond(
+            f"Event sync check for Job #{int(job_id)}\n"
+            f"Linked event: `{event_id}`\n"
+            f"RSVP subscribers: `{subs}`\n"
+            f"Tracked attendees: `{len(tracked)}`",
+            ephemeral=True,
+        )
+
+    @jobtest.command(name="event_dryrun_payout", description="(Admin) Preview event payout split without paying")
+    @admin_only()
+    async def event_dryrun_payout(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        reward = int(row[5])
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        locked = await self.db.get_job_attendance_lock(int(job_id))
+        attendee_ids = await self.db.get_job_attendance_snapshot(int(job_id)) if locked else [int(a[0]) for a in await self.db.list_event_attendees(int(job_id))]
+        if not attendee_ids:
+            return await ctx.respond("No attendees available for payout preview.", ephemeral=True)
+
+        base = reward // len(attendee_ids)
+        remainder = reward % len(attendee_ids)
+        lines = []
+        for i, uid in enumerate(attendee_ids[:40]):
+            amt = int(base) + (1 if i < remainder else 0)
+            lines.append(f"<@{uid}> -> `{amt:,}`")
+
+        await ctx.respond(
+            f"Dry-run payout for Job #{int(job_id)} (reward `{reward:,}` over `{len(attendee_ids)}` attendees, locked={locked})\n"
+            + "\n".join(lines),
+            ephemeral=True,
+        )
+
+    @jobtest.command(name="event_force_snapshot", description="(Admin) Sync RSVPs then snapshot+lock attendance")
+    @admin_only()
+    async def event_force_snapshot(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        await self.db.set_job_attendance_lock(int(job_id), False)
+        count = await self._sync_attendance_from_event(int(job_id))
+        attendees = await self.db.list_event_attendees(int(job_id))
+        attendee_ids = [int(a[0]) for a in attendees]
+        await self.db.set_job_attendance_snapshot(int(job_id), attendee_ids)
+        await self.db.set_job_attendance_lock(int(job_id), True)
+
+        await ctx.respond(
+            f"Snapshot locked for Job #{int(job_id)}. Synced RSVPs: `{int(count)}`, snapshot size: `{len(attendee_ids)}`.",
+            ephemeral=True,
+        )
+
     @jobs.command(name="complete", description="Mark a job as completed (claimer or admin)")
     async def complete(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
         row = await self.db.get_job(int(job_id))
@@ -1179,7 +1297,10 @@ class JobsCog(commands.Cog):
 
             attendee_ids = await self.db.get_job_attendance_snapshot(int(jid))
             if not attendee_ids:
-                return await ctx.respond("No attendees tracked for this event job.", ephemeral=True)
+                return await ctx.respond(
+                    "Attendance snapshot is empty. Run `/jobs attendance_sync` (or unlock/re-lock) before confirming.",
+                    ephemeral=True,
+                )
 
             base = int(reward) // len(attendee_ids)
             remainder = int(reward) % len(attendee_ids)
