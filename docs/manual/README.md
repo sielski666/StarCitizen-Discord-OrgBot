@@ -4,7 +4,7 @@ Use this manual in order.
 
 ## Recommended order (most important first)
 1. [01 - Quick Start](01-quick-start.md)
-2. [02 - Setup](02-setup.md)
+2. [02 - Setup Commands](02-setup-commands.md)
 3. [03 - Command Index](03-command-index.md)
 4. [04 - Jobs Commands](04-jobs-commands.md)
 5. [05 - Job Template Commands](05-jobtemplates-commands.md)
