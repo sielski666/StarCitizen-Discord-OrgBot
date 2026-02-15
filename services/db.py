@@ -116,6 +116,14 @@ CREATE TABLE IF NOT EXISTS job_templates (
   category TEXT,
   active INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS job_event_attendance (
+  job_id INTEGER NOT NULL,
+  discord_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'joined',
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (job_id, discord_id)
+);
 """
 
 
@@ -537,6 +545,36 @@ class Database:
             (str(name).strip(),),
         )
         return await cur.fetchone()
+
+    async def get_job_category(self, job_id: int) -> str | None:
+        cur = await self.conn.execute("SELECT category FROM jobs WHERE job_id=?", (int(job_id),))
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return str(row[0]).strip().lower() if row[0] is not None else None
+
+    async def add_event_attendee(self, job_id: int, discord_id: int) -> bool:
+        cur = await self.conn.execute(
+            "INSERT OR IGNORE INTO job_event_attendance(job_id, discord_id, status) VALUES(?,?, 'joined')",
+            (int(job_id), int(discord_id)),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def remove_event_attendee(self, job_id: int, discord_id: int) -> bool:
+        cur = await self.conn.execute(
+            "DELETE FROM job_event_attendance WHERE job_id=? AND discord_id=?",
+            (int(job_id), int(discord_id)),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def list_event_attendees(self, job_id: int):
+        cur = await self.conn.execute(
+            "SELECT discord_id, status, joined_at FROM job_event_attendance WHERE job_id=? ORDER BY joined_at ASC",
+            (int(job_id),),
+        )
+        return await cur.fetchall()
 
     async def list_job_templates(self, include_inactive: bool = True, limit: int = 50):
         if include_inactive:

@@ -758,6 +758,59 @@ class JobsCog(commands.Cog):
             return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
         await ctx.respond(f"Template `{name}` enabled.", ephemeral=True)
 
+    @jobs.command(name="attend", description="Join an event job attendance list")
+    async def attend(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        status = str(row[6])
+        if status in ("paid", "cancelled"):
+            return await ctx.respond(f"This event is closed (status: {_status_text(status)}).", ephemeral=True)
+
+        added = await self.db.add_event_attendee(int(job_id), int(ctx.author.id))
+        if not added:
+            return await ctx.respond(f"You are already on attendance for Job #{int(job_id)}.", ephemeral=True)
+
+        await ctx.respond(f"You are marked as attending Job #{int(job_id)}.", ephemeral=True)
+
+    @jobs.command(name="unattend", description="Leave an event job attendance list")
+    async def unattend(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        removed = await self.db.remove_event_attendee(int(job_id), int(ctx.author.id))
+        if not removed:
+            return await ctx.respond(f"You were not on attendance for Job #{int(job_id)}.", ephemeral=True)
+
+        await ctx.respond(f"You have been removed from attendance for Job #{int(job_id)}.", ephemeral=True)
+
+    @jobs.command(name="attendees", description="Show current event attendees for a job")
+    async def attendees(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        attendees = await self.db.list_event_attendees(int(job_id))
+        if not attendees:
+            return await ctx.respond(f"No attendees tracked yet for Job #{int(job_id)}.", ephemeral=True)
+
+        mentions = [f"<@{int(a[0])}>" for a in attendees[:50]]
+        await ctx.respond(f"Event attendees for Job #{int(job_id)}:\n" + "\n".join(mentions), ephemeral=True)
+
     # COMPLETE (Claimer OR Admin)
     @jobs.command(name="complete", description="Mark a job as completed (claimer or admin)")
     async def complete(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
