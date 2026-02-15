@@ -1,16 +1,24 @@
 # Feedback & Known Issues
 
-## Bot Feedback Template
-When reporting issues, include:
-- What command/action you ran
+## Feedback policy
+Feedback should target **bot behavior**, not just docs wording.
+
+## Suggested bug report template
+- Command/action run
 - Job ID / Event ID
-- Expected behavior
-- Actual behavior
-- Screenshot/log snippet
+- Expected result
+- Actual result
+- Screenshot
+- Time (UTC)
 
-## Recommended feedback channel
-Use your Discord `#bot-feedback` channel (or your chosen tracker).
+## Suggested feedback categories
+- Setup
+- Templates
+- Event attendance sync
+- Payout/finance
+- Permissions/roles
+- UX improvement
 
-## Known caveats
-- End-to-end UI validation still depends on Discord permissions/context.
-- If Scheduled Event permissions are missing, event auto-create/sync can fail.
+## Known limitations
+- Full UI E2E validation may require live Discord interaction context.
+- Scheduled Event integration depends on Discord permissions and event availability.

@@ -1,21 +1,25 @@
 # Setup
 
-## Automated setup
-Use `/setup start` (admin):
-- ensures key channels (jobs/treasury/share-sell-confirm)
-- ensures `Event Handler` role
-- writes IDs into `.env`
+## Primary setup command
+`/setup start` (Admin)
 
-Then restart service:
+What it does:
+- Ensures channels exist (`jobs`, `treasury`, `share-sell-confirm`)
+- Ensures `Event Handler` role exists
+- Syncs IDs into `.env`
+- Sets compatibility `FINANCE_CHANNEL_ID` to treasury channel
+
+After running setup, restart bot service:
 ```bash
 sudo systemctl restart starcitizen-orgbot
 ```
 
-## Verify
-Use `/setup status` and confirm all required fields are present.
+## Validation commands
+- `/setup status` -> checks required config presence
+- `/setup createchannels` -> re-ensure channels only
 
-## Role model
-- Admin: full control
-- Finance: confirm payouts, attendance lock/sync controls
-- Jobs Admin: job admin operations
-- Event Handler: allowed to post event templates
+## Setup lifecycle
+1. Run `/setup start`
+2. Assign users to Finance / Jobs Admin / Event Handler roles
+3. Create templates via `/jobtemplates add`
+4. Start operations (`/jobs post`, `/jobs confirm`, finance workflows)

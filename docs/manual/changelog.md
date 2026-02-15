@@ -1,12 +1,13 @@
 # Changelog
 
-## Current phase highlights
-- Ledger + reconcile added
-- Job escrow reserve/release safety added
-- Template/category system added
-- Event jobs with RSVP auto-sync added
-- Attendance lock/snapshot payout safety added
-- Event Handler role restriction for event templates
-- Setup now ensures Event Handler role
-- Modal UX for template create/update
-- Admin self-test commands for event workflows
+## 2026-02 current delivery block
+- Ledger + reconcile implemented
+- Escrow reservation/release + payout safety implemented
+- Template/category system delivered
+- Event jobs delivered (scheduled-event linking + RSVP auto-sync)
+- Attendance lock/snapshot safety delivered
+- Event Handler restriction for event templates delivered
+- Setup auto-ensures Event Handler role delivered
+- Template modal UX and template admin commands expanded
+- Job self-test commands added for event flow validation
+- Manual docs structure and command reference added
