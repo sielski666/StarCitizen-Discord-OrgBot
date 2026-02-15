@@ -1,4 +1,4 @@
-# 02 - Quick Start
+# 01 - Quick Start
 
 ## Baseline checks
 - Copy `.env.example` -> `.env` (remove `.example` suffix)

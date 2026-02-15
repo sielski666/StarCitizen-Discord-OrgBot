@@ -1,14 +1,15 @@
-# 01 - Setup
+# 02 - Setup
 
-Run setup before any production use.
+Run setup commands after quick start and before production use.
 
-## Step 1 — Run setup
+## Step 1 — Run setup command
 `/setup start` (Admin)
 
 This command:
 - ensures required channels (`jobs`, `treasury`, `share-sell-confirm`)
 - ensures `Event Handler` role exists
 - writes/syncs IDs to `.env`
+- updates config for newer setup flow (event-handler support + channel/env sync)
 
 ## Step 2 — Validate setup
 `/setup status`
