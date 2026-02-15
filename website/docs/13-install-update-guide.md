@@ -90,17 +90,19 @@ From repo root:
 ./scripts/update.sh
 ```
 
-### Windows
-- Recommended: run the updater from **WSL** or **Git Bash**.
-- Native PowerShell users should follow the manual update flow below.
+### Windows (PowerShell)
+From repo root:
+```powershell
+.\scripts\update.ps1
+```
 
-What the updater script does:
-1. fetches latest `origin/main`
-2. fast-forwards local repo
-3. updates dependencies
-4. runs compile checks
-5. restarts `starcitizen-orgbot`
-6. rolls back to previous commit if update fails
+What the updater scripts do:
+1. fetch latest `origin/main`
+2. fast-forward local repo
+3. update dependencies
+4. run compile checks
+5. restart service/process (when configured)
+6. roll back to previous commit if update fails
 
 ## Manual update flow (ZIP/manual installs)
 

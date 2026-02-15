@@ -131,8 +131,13 @@ What it does:
 - auto-rolls back to previous commit if update fails
 
 ### Windows
-- Auto-updater is intended for bash environments (WSL/Git Bash).
-- Native PowerShell users should use manual update steps from the install/update guide.
+Use the native PowerShell updater:
+
+```powershell
+.\scripts\update.ps1
+```
+
+If you installed from ZIP (no `.git`), use manual update steps from the install/update guide.
 
 For full platform install/update paths (git auto-update vs manual ZIP updates), see:
 - `website/docs/13-install-update-guide.md`
