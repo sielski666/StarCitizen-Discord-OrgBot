@@ -169,9 +169,13 @@ def _job_embed(
         preview = "\n".join(f"<@{uid}>" for uid in attendees[:8]) if attendees else "—"
         if total > 8:
             preview += f"\n… +{total - 8} more"
-        lock_tag = "🔒 Locked" if attendance_locked else "🟢 Live"
+        attendance_state = (
+            "🔒 No longer accepting participants"
+            if attendance_locked
+            else "🟢 On-boarding / accepting participants"
+        )
         e.add_field(name=f"Participants ({total})", value=preview, inline=True)
-        e.add_field(name="Attendance", value=f"RSVP via linked event\n{lock_tag}", inline=True)
+        e.add_field(name="Attendance", value=f"RSVP via linked event\n{attendance_state}", inline=True)
     else:
         e.add_field(name="Claimed by", value=f"<@{claimed_by}>" if claimed_by else "—", inline=True)
         e.add_field(name="\u200b", value="\u200b", inline=True)
