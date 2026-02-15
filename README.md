@@ -113,6 +113,22 @@ Economy/tier values:
 python bot.py
 ```
 
+## Updating (one command)
+
+For git-based installs, update to latest `main` with:
+
+```bash
+./scripts/update.sh
+```
+
+What it does:
+- fetches `origin/main`
+- fast-forwards local repo
+- updates dependencies (`.venv`)
+- runs compile checks
+- restarts `starcitizen-orgbot`
+- auto-rolls back to previous commit if update fails
+
 On startup, the bot:
 
 - connects DB

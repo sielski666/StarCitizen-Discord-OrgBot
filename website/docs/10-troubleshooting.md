@@ -1,5 +1,15 @@
 # 10 - Troubleshooting
 
+## Updating to latest version
+Use the safe updater script from repo root:
+
+```bash
+./scripts/update.sh
+```
+
+This updates code + deps, compiles, restarts service, and rolls back automatically if something fails.
+
+
 ## Commands missing in Discord
 - restart service
 - verify bot permissions
