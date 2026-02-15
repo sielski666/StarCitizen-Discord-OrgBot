@@ -120,6 +120,21 @@ On startup, the bot:
 - refreshes recent event job cards so attendee display/state is current
 - syncs application commands to `GUILD_ID` (if provided)
 
+## Branding (job card logo)
+
+The thumbnail logo shown in the top-right of job cards comes from:
+
+- `assets/org_logo.png`
+
+To use your org logo:
+1. Replace `assets/org_logo.png` with your image (keep filename the same).
+2. Restart the bot:
+   ```bash
+   sudo systemctl restart starcitizen-orgbot
+   ```
+
+If the file is missing, the bot posts cards without the custom logo.
+
 ## Notes
 
 - Keep `.env` private (never commit real tokens/IDs).
