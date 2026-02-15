@@ -2,7 +2,7 @@
 
 ## Links
 - Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
-- Discord: ADD_DISCORD_INVITE_LINK_HERE
+- Discord: https://discord.gg/BT8rpuX8R
 
 ## Baseline checks
 - Copy `.env.example` -> `.env` (remove `.example` suffix)
