@@ -1,4 +1,4 @@
-# 04 - Jobs Commands
+# 05 - Jobs Commands
 
 ## `/jobs post`
 **Who:** guild members

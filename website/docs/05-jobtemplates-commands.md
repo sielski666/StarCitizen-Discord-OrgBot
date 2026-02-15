@@ -1,4 +1,4 @@
-# 05 - Event Template Commands
+# 06 - Event Template Commands
 
 Templates are now event-focused and used with `/eventjob post`.
 

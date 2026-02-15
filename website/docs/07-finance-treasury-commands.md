@@ -1,4 +1,4 @@
-# 07 - Finance & Treasury Commands
+# 08 - Finance & Treasury Commands
 
 ## Finance commands
 

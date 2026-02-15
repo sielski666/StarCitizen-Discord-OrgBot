@@ -1,4 +1,4 @@
-# 06 - Event Jobs
+# 07 - Event Jobs
 
 Event jobs are jobs with category `event` and scheduled-event attendance integration.
 

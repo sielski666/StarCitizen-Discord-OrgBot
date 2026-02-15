@@ -1,4 +1,4 @@
-# 01 - Quick Start
+# 02 - Quick Start
 
 ## Links
 - Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/

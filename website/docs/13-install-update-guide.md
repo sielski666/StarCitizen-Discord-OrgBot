@@ -1,4 +1,4 @@
-# 13 - Install & Update Guide
+# 01 - Install & Update Guide
 
 Use this page if you want the **auto-update command** (`./scripts/update.sh`).
 

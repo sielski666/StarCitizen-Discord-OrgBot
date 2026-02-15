@@ -1,4 +1,4 @@
-# 03 - Command Index
+# 04 - Command Index
 
 This page is the command map. Use the detailed pages for exact usage and behavior.
 
