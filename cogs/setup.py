@@ -184,6 +184,37 @@ class SetupCog(commands.Cog):
         except Exception:
             return None
 
+    async def _ensure_job_area_channels(self, guild: discord.Guild) -> dict[str, str] | None:
+        try:
+            cat_name = "Jobs"
+            jobs_category = discord.utils.get(guild.categories, name=cat_name)
+            if jobs_category is None:
+                jobs_category = await guild.create_category(cat_name)
+
+            area_to_name = {
+                "general": "jobs-general",
+                "salvage": "jobs-salvage",
+                "mining": "jobs-mining",
+                "hauling": "jobs-hauling",
+                "event": "jobs-event",
+            }
+
+            out: dict[str, str] = {}
+            for area, ch_name in area_to_name.items():
+                ch = discord.utils.get(guild.text_channels, name=ch_name)
+                if ch is None:
+                    ch = await guild.create_text_channel(ch_name, category=jobs_category)
+                elif ch.category_id != jobs_category.id:
+                    try:
+                        await ch.edit(category=jobs_category)
+                    except Exception:
+                        pass
+                out[area] = str(ch.id)
+
+            return out
+        except Exception:
+            return None
+
     def _read_env(self) -> dict[str, str]:
         data: dict[str, str] = {}
         if not ENV_PATH.exists():
@@ -206,6 +237,7 @@ class SetupCog(commands.Cog):
             "FINANCE_ROLE_ID",
             "JOBS_ADMIN_ROLE_ID",
             "EVENT_HANDLER_ROLE_ID",
+            "JOB_CATEGORY_CHANNEL_MAP",
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
@@ -262,6 +294,15 @@ class SetupCog(commands.Cog):
                 ephemeral=True,
             )
 
+        area_map = await self._ensure_job_area_channels(guild)
+        if area_map is None:
+            return await ctx.respond(
+                "Failed creating/validating job area channels/category. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
+        area_map_value = ",".join(f"{k}:{v}" for k, v in area_map.items())
+
         updates = {
             "GUILD_ID": env.get("GUILD_ID", "") or str(guild.id),
             "JOBS_CHANNEL_ID": str(jobs_id),
@@ -269,6 +310,7 @@ class SetupCog(commands.Cog):
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "EVENT_HANDLER_ROLE_ID": str(event_handler_role_id),
+            "JOB_CATEGORY_CHANNEL_MAP": area_map_value,
         }
         self._write_env(updates)
 
@@ -283,6 +325,7 @@ class SetupCog(commands.Cog):
             f"Treasury: <#{treasury_id}>\n"
             f"Shares Sell: <#{shares_id}>\n"
             f"Event Handler Role: <@&{event_handler_role_id}>\n"
+            f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
             "(Token remains managed in `.env` as DISCORD_TOKEN.)"
         )
         if missing_roles:
@@ -304,6 +347,7 @@ class SetupCog(commands.Cog):
             "FINANCE_ROLE_ID",
             "JOBS_ADMIN_ROLE_ID",
             "EVENT_HANDLER_ROLE_ID",
+            "JOB_CATEGORY_CHANNEL_MAP",
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
@@ -317,6 +361,7 @@ class SetupCog(commands.Cog):
             f"Finance Role: `{env.get('FINANCE_ROLE_ID', 'missing')}`\n"
             f"Jobs Admin Role: `{env.get('JOBS_ADMIN_ROLE_ID', 'missing')}`\n"
             f"Event Handler Role: `{env.get('EVENT_HANDLER_ROLE_ID', 'missing')}`\n"
+            f"Job Category Map: `{env.get('JOB_CATEGORY_CHANNEL_MAP', 'missing')}`\n"
             f"Jobs Channel: `{env.get('JOBS_CHANNEL_ID', 'missing')}`\n"
             f"Treasury Channel: `{env.get('TREASURY_CHANNEL_ID', env.get('FINANCE_CHANNEL_ID', 'missing'))}`\n"
             f"Shares Sell Channel: `{env.get('SHARES_SELL_CHANNEL_ID', 'missing')}`\n"
@@ -354,11 +399,19 @@ class SetupCog(commands.Cog):
 
         jobs_id, treasury_id, shares_id = ensured
 
+        area_map = await self._ensure_job_area_channels(guild)
+        if area_map is None:
+            return await ctx.respond(
+                "Failed creating area channels/category. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
         updates = {
             "JOBS_CHANNEL_ID": str(jobs_id),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
+            "JOB_CATEGORY_CHANNEL_MAP": ",".join(f"{k}:{v}" for k, v in area_map.items()),
         }
         self._write_env(updates)
 
@@ -367,6 +420,7 @@ class SetupCog(commands.Cog):
             f"Jobs: <#{jobs_id}>\n"
             f"Treasury: <#{treasury_id}>\n"
             f"Shares Sell: <#{shares_id}>\n"
+            f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
             "Run: `sudo systemctl restart starcitizen-orgbot` to apply.",
             ephemeral=True,
         )

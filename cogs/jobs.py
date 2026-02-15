@@ -21,6 +21,24 @@ REP_PER_JOB_PAYOUT = int(os.getenv("REP_PER_JOB_PAYOUT", "10") or "10")
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")
 JOBS_CHANNEL_ID = int(os.getenv("JOBS_CHANNEL_ID", "0") or "0")
 EVENT_HANDLER_ROLE_ID = int(os.getenv("EVENT_HANDLER_ROLE_ID", "0") or "0")
+JOB_CATEGORY_CHANNEL_MAP_RAW = os.getenv("JOB_CATEGORY_CHANNEL_MAP", "")
+
+
+def _parse_job_category_channel_map(raw: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+        k, v = part.split(":", 1)
+        k = k.strip().lower()
+        v = v.strip()
+        if k and v.isdigit():
+            out[k] = int(v)
+    return out
+
+
+JOB_CATEGORY_CHANNEL_MAP = _parse_job_category_channel_map(JOB_CATEGORY_CHANNEL_MAP_RAW)
 
 logger = logging.getLogger(__name__)
 
@@ -381,16 +399,23 @@ class JobPostModal(discord.ui.Modal):
             placeholder = discord.Embed(title="Creating job…", description="Please wait.", colour=discord.Colour.from_rgb(32, 41, 74))
 
             channel = interaction.channel
-            if JOBS_CHANNEL_ID:
-                if not interaction.guild:
-                    return await interaction.followup.send("Guild context missing for jobs channel routing.", ephemeral=True)
+            if not interaction.guild:
+                return await interaction.followup.send("Guild context missing for jobs channel routing.", ephemeral=True)
+
+            category_key = str(self.category or "general").strip().lower()
+            routed_id = JOB_CATEGORY_CHANNEL_MAP.get(category_key)
+            if routed_id:
+                ch = interaction.guild.get_channel(int(routed_id))
+                if ch is not None:
+                    channel = ch
+                elif JOBS_CHANNEL_ID:
+                    fallback = interaction.guild.get_channel(JOBS_CHANNEL_ID)
+                    if fallback is not None:
+                        channel = fallback
+            elif JOBS_CHANNEL_ID:
                 ch = interaction.guild.get_channel(JOBS_CHANNEL_ID)
-                if ch is None:
-                    return await interaction.followup.send(
-                        f"Configured JOBS_CHANNEL_ID (<#{JOBS_CHANNEL_ID}>) was not found. Run `/setup start`.",
-                        ephemeral=True,
-                    )
-                channel = ch
+                if ch is not None:
+                    channel = ch
 
             if channel is None:
                 return await interaction.followup.send("Could not find the channel to post the job in.", ephemeral=True)
