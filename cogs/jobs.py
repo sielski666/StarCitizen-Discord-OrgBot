@@ -417,6 +417,98 @@ class JobPostModal(discord.ui.Modal):
                 logger.debug("Could not send modal failure followup", exc_info=True)
 
 
+class JobTemplateModal(discord.ui.Modal):
+    def __init__(
+        self,
+        cog: "JobsCog",
+        existing: tuple | None = None,
+    ):
+        title = "Update Job Template" if existing else "Create Job Template"
+        super().__init__(title=title)
+        self.cog = cog
+
+        existing_name = str(existing[1]) if existing else ""
+        existing_title = str(existing[2]) if existing else ""
+        existing_desc = str(existing[3]) if existing else ""
+        existing_rmin = str(int(existing[4])) if existing else "0"
+        existing_rmax = str(int(existing[5])) if existing else "0"
+        existing_tier = str(int(existing[6])) if existing else "0"
+        existing_category = str(existing[7] or "general") if existing else "general"
+
+        self.template_name = discord.ui.InputText(label="Template Name", value=existing_name[:80] if existing_name else None, max_length=80)
+        self.template_title = discord.ui.InputText(label="Default Job Title", value=existing_title[:80] if existing_title else None, max_length=80)
+        self.template_description = discord.ui.InputText(
+            label="Default Description",
+            value=existing_desc[:1000] if existing_desc else None,
+            style=discord.InputTextStyle.long,
+            max_length=1000,
+        )
+        self.template_reward_range = discord.ui.InputText(
+            label="Reward Range (min,max)",
+            value=f"{existing_rmin},{existing_rmax}",
+            placeholder="e.g. 500000,1000000",
+            max_length=40,
+        )
+        self.template_tier_category = discord.ui.InputText(
+            label="Tier,Category",
+            value=f"{existing_tier},{existing_category}"[:100],
+            placeholder="e.g. 5,event",
+            max_length=100,
+        )
+
+        self.add_item(self.template_name)
+        self.add_item(self.template_title)
+        self.add_item(self.template_description)
+        self.add_item(self.template_reward_range)
+        self.add_item(self.template_tier_category)
+
+    async def callback(self, interaction: discord.Interaction):
+        name = (self.template_name.value or "").strip()
+        title = (self.template_title.value or "").strip()
+        description = (self.template_description.value or "").strip()
+        reward_range_raw = (self.template_reward_range.value or "").strip()
+        tier_category_raw = (self.template_tier_category.value or "").strip()
+
+        rr_parts = [p.strip().replace(",", "") for p in reward_range_raw.split(",")]
+        if len(rr_parts) != 2:
+            return await interaction.response.send_message("Reward range must be `min,max`.", ephemeral=True)
+        reward_min_raw, reward_max_raw = rr_parts
+
+        tc_parts = [p.strip() for p in tier_category_raw.split(",", 1)]
+        if len(tc_parts) != 2:
+            return await interaction.response.send_message("Tier/category must be `tier,category`.", ephemeral=True)
+        tier_raw, category = tc_parts
+        category = category or "general"
+
+        if not name:
+            return await interaction.response.send_message("Template name is required.", ephemeral=True)
+        if not title:
+            return await interaction.response.send_message("Default title is required.", ephemeral=True)
+        if not description:
+            return await interaction.response.send_message("Default description is required.", ephemeral=True)
+        if not reward_min_raw.isdigit() or not reward_max_raw.isdigit() or not tier_raw.isdigit():
+            return await interaction.response.send_message("Reward min/max and tier must be whole numbers.", ephemeral=True)
+
+        reward_min = int(reward_min_raw)
+        reward_max = int(reward_max_raw)
+        tier_required = int(tier_raw)
+
+        if reward_min < 0 or reward_max < 0 or reward_max < reward_min:
+            return await interaction.response.send_message("Invalid reward range.", ephemeral=True)
+
+        template_id = await self.cog.db.upsert_job_template(
+            name=name,
+            default_title=title,
+            default_description=description,
+            default_reward_min=reward_min,
+            default_reward_max=reward_max,
+            default_tier_required=tier_required,
+            category=category,
+            active=True,
+        )
+        await interaction.response.send_message(f"Template `{name}` saved (id `{template_id}`).", ephemeral=True)
+
+
 class JobWorkflowView(discord.ui.View):
     """Three-stage job workflow via buttons: Accept -> Complete -> Confirm."""
 
@@ -825,33 +917,18 @@ class JobsCog(commands.Cog):
         view = JobTierSelectView(self)
         await ctx.respond("Choose the job tier:", view=view, ephemeral=True)
 
-    @jobtemplates.command(name="add", description="(Admin) Create/update a job template")
+    @jobtemplates.command(name="add", description="(Admin) Create a job template (modal)")
     @admin_only()
-    async def template_add(
-        self,
-        ctx: discord.ApplicationContext,
-        name: str,
-        title: str,
-        description: str,
-        reward_min: int,
-        reward_max: int,
-        tier_required: int = 0,
-        category: str = "general",
-    ):
-        if reward_min < 0 or reward_max < 0 or reward_max < reward_min:
-            return await ctx.respond("Invalid reward range.", ephemeral=True)
+    async def template_add(self, ctx: discord.ApplicationContext):
+        await ctx.send_modal(JobTemplateModal(self))
 
-        template_id = await self.db.upsert_job_template(
-            name=name,
-            default_title=title,
-            default_description=description,
-            default_reward_min=int(reward_min),
-            default_reward_max=int(reward_max),
-            default_tier_required=int(tier_required),
-            category=category,
-            active=True,
-        )
-        await ctx.respond(f"Template `{name}` saved (id `{template_id}`).", ephemeral=True)
+    @jobtemplates.command(name="update", description="(Admin) Update an existing job template (modal)")
+    @admin_only()
+    async def template_update(self, ctx: discord.ApplicationContext, name: str):
+        row = await self.db.get_job_template_by_name(str(name))
+        if not row:
+            return await ctx.respond(f"Template `{name}` not found.", ephemeral=True)
+        await ctx.send_modal(JobTemplateModal(self, existing=row))
 
     @jobtemplates.command(name="list", description="List job templates")
     async def template_list(self, ctx: discord.ApplicationContext, include_inactive: bool = True):
