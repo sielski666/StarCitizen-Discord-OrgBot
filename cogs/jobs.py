@@ -607,8 +607,13 @@ class JobWorkflowView(discord.ui.View):
         payout_targets: list[tuple[int, int]] = []
 
         if category == "event":
-            attendees = await self.db.list_event_attendees(int(job_id_db))
-            attendee_ids = [int(a[0]) for a in attendees]
+            if not await self.db.get_job_attendance_lock(int(job_id_db)):
+                attendees_live = await self.db.list_event_attendees(int(job_id_db))
+                attendee_ids_live = [int(a[0]) for a in attendees_live]
+                await self.db.set_job_attendance_snapshot(int(job_id_db), attendee_ids_live)
+                await self.db.set_job_attendance_lock(int(job_id_db), True)
+
+            attendee_ids = await self.db.get_job_attendance_snapshot(int(job_id_db))
             if not attendee_ids:
                 return await interaction.followup.send("No attendees tracked for this event job.", ephemeral=True)
 
@@ -634,6 +639,7 @@ class JobWorkflowView(discord.ui.View):
             return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
 
         rep_added_total = 0
+        payout_note_parts: list[str] = []
         for uid, amount in payout_targets:
             await self.db.add_balance(
                 discord_id=int(uid),
@@ -641,6 +647,7 @@ class JobWorkflowView(discord.ui.View):
                 tx_type="payout",
                 reference=f"job:{job_id_db}|by:{interaction.user.id}",
             )
+            payout_note_parts.append(f"{uid}:{int(amount)}")
 
             before_level = await self.db.get_level(int(uid), per_level=LEVEL_PER_REP)
             if int(REP_PER_JOB_PAYOUT) > 0:
@@ -663,6 +670,18 @@ class JobWorkflowView(discord.ui.View):
                         member_obj = None
                 if member_obj is not None:
                     await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
+
+        if category == "event":
+            await self.db.add_ledger_entry(
+                entry_type="event_payout_snapshot",
+                amount=int(reward),
+                from_account=f"job:{int(job_id_db)}",
+                to_account=f"attendees:{len(payout_targets)}",
+                reference_type="job",
+                reference_id=str(int(job_id_db)),
+                notes=";".join(payout_note_parts),
+            )
+            await self.db.conn.commit()
 
         min_level = _extract_min_level_from_embed(interaction.message.embeds[0]) if interaction.message.embeds else 0
         updated = _job_embed(job_id_db, title, description, int(reward), "paid", created_by, claimed_by, min_level=min_level)
@@ -717,6 +736,40 @@ class JobsCog(commands.Cog):
             await self.db.remove_event_attendee(int(job_id), int(payload.user_id))
         except Exception:
             logger.debug("Failed syncing scheduled event RSVP remove", exc_info=True)
+
+    async def _sync_attendance_from_event(self, job_id: int) -> int:
+        cur = await self.db.conn.execute("SELECT event_id FROM job_event_links WHERE job_id=?", (int(job_id),))
+        row = await cur.fetchone()
+        if not row:
+            raise ValueError("No linked scheduled event found for this job.")
+
+        event_id = int(row[0])
+        guild = self.bot.guilds[0] if self.bot.guilds else None
+        if guild is None:
+            raise ValueError("Guild context unavailable for event sync.")
+
+        event = guild.get_scheduled_event(event_id)
+        if event is None:
+            try:
+                event = await guild.fetch_scheduled_event(event_id)
+            except Exception as e:
+                raise ValueError(f"Could not fetch scheduled event {event_id}: {e}")
+
+        existing = await self.db.list_event_attendees(int(job_id))
+        existing_ids = {int(a[0]) for a in existing}
+
+        seen_ids: set[int] = set()
+        async for u in event.subscribers(limit=None, as_member=True):
+            uid = int(u.id)
+            seen_ids.add(uid)
+            if uid not in existing_ids:
+                await self.db.add_event_attendee(int(job_id), uid)
+
+        for uid in existing_ids:
+            if uid not in seen_ids:
+                await self.db.remove_event_attendee(int(job_id), int(uid))
+
+        return len(seen_ids)
 
     jobs = discord.SlashCommandGroup("jobs", "Job board commands")
     jobtemplates = discord.SlashCommandGroup("jobtemplates", "Job template admin commands")
@@ -878,6 +931,51 @@ class JobsCog(commands.Cog):
         mentions = [f"<@{int(a[0])}>" for a in attendees[:50]]
         await ctx.respond(f"Event attendees for Job #{int(job_id)}:\n" + "\n".join(mentions), ephemeral=True)
 
+    @jobs.command(name="attendance_lock", description="(Finance/Admin) Lock event attendance list")
+    @finance_or_admin()
+    async def attendance_lock(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+
+        attendees = await self.db.list_event_attendees(int(job_id))
+        attendee_ids = [int(a[0]) for a in attendees]
+        await self.db.set_job_attendance_snapshot(int(job_id), attendee_ids)
+        await self.db.set_job_attendance_lock(int(job_id), True)
+        await ctx.respond(f"Attendance locked for Job #{int(job_id)} with `{len(attendee_ids)}` attendees.", ephemeral=True)
+
+    @jobs.command(name="attendance_unlock", description="(Finance/Admin) Unlock event attendance list")
+    @finance_or_admin()
+    async def attendance_unlock(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+        await self.db.set_job_attendance_lock(int(job_id), False)
+        await ctx.respond(f"Attendance unlocked for Job #{int(job_id)}.", ephemeral=True)
+
+    @jobs.command(name="attendance_sync", description="(Finance/Admin) Force-sync attendance from scheduled event RSVPs")
+    @finance_or_admin()
+    async def attendance_sync(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+        category = await self.db.get_job_category(int(job_id))
+        if category != "event":
+            return await ctx.respond("This command is only for event-category jobs.", ephemeral=True)
+        if await self.db.get_job_attendance_lock(int(job_id)):
+            return await ctx.respond("Attendance is locked for this job. Unlock before sync.", ephemeral=True)
+        try:
+            count = await self._sync_attendance_from_event(int(job_id))
+        except ValueError as e:
+            return await ctx.respond(str(e), ephemeral=True)
+        await ctx.respond(f"Attendance synced for Job #{int(job_id)}. Tracked attendees: `{int(count)}`.", ephemeral=True)
+
     # COMPLETE (Claimer OR Admin)
     @jobs.command(name="complete", description="Mark a job as completed (claimer or admin)")
     async def complete(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
@@ -963,8 +1061,13 @@ class JobsCog(commands.Cog):
         payout_targets: list[tuple[int, int]] = []
 
         if category == "event":
-            attendees = await self.db.list_event_attendees(int(jid))
-            attendee_ids = [int(a[0]) for a in attendees]
+            if not await self.db.get_job_attendance_lock(int(jid)):
+                attendees_live = await self.db.list_event_attendees(int(jid))
+                attendee_ids_live = [int(a[0]) for a in attendees_live]
+                await self.db.set_job_attendance_snapshot(int(jid), attendee_ids_live)
+                await self.db.set_job_attendance_lock(int(jid), True)
+
+            attendee_ids = await self.db.get_job_attendance_snapshot(int(jid))
             if not attendee_ids:
                 return await ctx.respond("No attendees tracked for this event job.", ephemeral=True)
 
@@ -990,6 +1093,7 @@ class JobsCog(commands.Cog):
             return await ctx.respond("Could not mark as paid (maybe already paid).", ephemeral=True)
 
         rep_added_total = 0
+        payout_note_parts: list[str] = []
         for uid, amount in payout_targets:
             await self.db.add_balance(
                 discord_id=int(uid),
@@ -997,6 +1101,7 @@ class JobsCog(commands.Cog):
                 tx_type="payout",
                 reference=f"job:{jid}|by:{ctx.author.id}",
             )
+            payout_note_parts.append(f"{uid}:{int(amount)}")
 
             member_obj: discord.Member | None = None
             if ctx.guild:
@@ -1024,6 +1129,18 @@ class JobsCog(commands.Cog):
 
             if member_obj and before_level is not None:
                 await _sync_member_tier_roles(self.db, member_obj, notify_dm=True, before_level=int(before_level))
+
+        if category == "event":
+            await self.db.add_ledger_entry(
+                entry_type="event_payout_snapshot",
+                amount=int(reward),
+                from_account=f"job:{int(jid)}",
+                to_account=f"attendees:{len(payout_targets)}",
+                reference_type="job",
+                reference_id=str(int(jid)),
+                notes=";".join(payout_note_parts),
+            )
+            await self.db.conn.commit()
 
         # Update original job message
         try:

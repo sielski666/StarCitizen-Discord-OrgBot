@@ -160,6 +160,10 @@ class Database:
             await self.conn.execute("ALTER TABLE jobs ADD COLUMN category TEXT")
         if "template_id" not in existing:
             await self.conn.execute("ALTER TABLE jobs ADD COLUMN template_id INTEGER")
+        if "attendance_locked" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN attendance_locked INTEGER NOT NULL DEFAULT 0")
+        if "attendance_snapshot" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN attendance_snapshot TEXT")
 
     async def close(self):
         if self.conn:
@@ -559,7 +563,42 @@ class Database:
             return None
         return str(row[0]).strip().lower() if row[0] is not None else None
 
+    async def get_job_attendance_lock(self, job_id: int) -> bool:
+        cur = await self.conn.execute("SELECT attendance_locked FROM jobs WHERE job_id=?", (int(job_id),))
+        row = await cur.fetchone()
+        return bool(int(row[0])) if row else False
+
+    async def set_job_attendance_lock(self, job_id: int, locked: bool) -> bool:
+        cur = await self.conn.execute(
+            "UPDATE jobs SET attendance_locked=?, updated_at=datetime('now') WHERE job_id=?",
+            (1 if locked else 0, int(job_id)),
+        )
+        await self.conn.commit()
+        return cur.rowcount > 0
+
+    async def set_job_attendance_snapshot(self, job_id: int, discord_ids: list[int]):
+        data = ",".join(str(int(x)) for x in discord_ids)
+        await self.conn.execute(
+            "UPDATE jobs SET attendance_snapshot=?, updated_at=datetime('now') WHERE job_id=?",
+            (data, int(job_id)),
+        )
+        await self.conn.commit()
+
+    async def get_job_attendance_snapshot(self, job_id: int) -> list[int]:
+        cur = await self.conn.execute("SELECT attendance_snapshot FROM jobs WHERE job_id=?", (int(job_id),))
+        row = await cur.fetchone()
+        if not row or not row[0]:
+            return []
+        out = []
+        for part in str(row[0]).split(","):
+            part = part.strip()
+            if part.isdigit():
+                out.append(int(part))
+        return out
+
     async def add_event_attendee(self, job_id: int, discord_id: int) -> bool:
+        if await self.get_job_attendance_lock(int(job_id)):
+            return False
         cur = await self.conn.execute(
             "INSERT OR IGNORE INTO job_event_attendance(job_id, discord_id, status) VALUES(?,?, 'joined')",
             (int(job_id), int(discord_id)),
@@ -568,6 +607,8 @@ class Database:
         return cur.rowcount == 1
 
     async def remove_event_attendee(self, job_id: int, discord_id: int) -> bool:
+        if await self.get_job_attendance_lock(int(job_id)):
+            return False
         cur = await self.conn.execute(
             "DELETE FROM job_event_attendance WHERE job_id=? AND discord_id=?",
             (int(job_id), int(discord_id)),
