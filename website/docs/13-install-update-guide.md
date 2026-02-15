@@ -18,24 +18,26 @@ Use this page if you want the **auto-update command** (`./scripts/update.sh`).
 
 ## Recommended install (supports auto-update)
 
-### Step 1 — Clone repo
+### Linux / macOS
+
+#### Step 1 — Clone repo
 ```bash
 git clone https://github.com/sielski666/StarCitizen-Discord-OrgBot.git
 cd StarCitizen-Discord-OrgBot
 ```
 
-### Step 2 — Create and activate virtualenv
+#### Step 2 — Create and activate virtualenv
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-### Step 3 — Install dependencies
+#### Step 3 — Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 4 — Configure environment
+#### Step 4 — Configure environment
 ```bash
 cp .env.example .env
 ```
@@ -43,19 +45,56 @@ Then edit `.env` and set at least:
 - `DISCORD_TOKEN`
 - required guild/role/channel IDs (or run `/setup start`)
 
-### Step 5 — Run bot
+#### Step 5 — Run bot
 ```bash
+python bot.py
+```
+
+### Windows (PowerShell)
+
+#### Step 1 — Clone repo
+```powershell
+git clone https://github.com/sielski666/StarCitizen-Discord-OrgBot.git
+cd StarCitizen-Discord-OrgBot
+```
+
+#### Step 2 — Create and activate virtualenv
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+#### Step 3 — Install dependencies
+```powershell
+pip install -r requirements.txt
+```
+
+#### Step 4 — Configure environment
+```powershell
+Copy-Item .env.example .env
+```
+Then edit `.env` and set at least:
+- `DISCORD_TOKEN`
+- required guild/role/channel IDs (or run `/setup start`)
+
+#### Step 5 — Run bot
+```powershell
 python bot.py
 ```
 
 ## Auto-update flow (git install only)
 
+### Linux / macOS
 From repo root:
 ```bash
 ./scripts/update.sh
 ```
 
-What this script does:
+### Windows
+- Recommended: run the updater from **WSL** or **Git Bash**.
+- Native PowerShell users should follow the manual update flow below.
+
+What the updater script does:
 1. fetches latest `origin/main`
 2. fast-forwards local repo
 3. updates dependencies
@@ -73,9 +112,16 @@ If you installed without git history:
 5. Start/restart bot service
 
 ## Quick check after any update
+
+### Linux (systemd)
 ```bash
 sudo systemctl status starcitizen-orgbot --no-pager
 ```
+
+### Windows (manual run)
+- confirm the bot process is running in your terminal
+- verify no startup errors in console output
+
 And in Discord:
 - run `/setup status`
 - run one test job flow
