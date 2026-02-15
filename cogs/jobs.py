@@ -953,6 +953,7 @@ class JobsCog(commands.Cog):
     def __init__(self, bot: commands.Bot, db: Database):
         self.bot = bot
         self.db = db
+        self._startup_event_refresh_done = False
 
     async def _refresh_event_job_card(self, job_id: int) -> None:
         row = await self.db.get_job(int(job_id))
@@ -1018,6 +1019,36 @@ class JobsCog(commands.Cog):
             view=JobWorkflowView(self.db, status=str(status), is_event=True) if str(status) != "cancelled" else None,
             files=files if files else None,
         )
+
+    async def _refresh_all_event_job_cards(self, limit: int = 250) -> int:
+        cur = await self.db.conn.execute(
+            "SELECT job_id FROM jobs WHERE status != 'cancelled' ORDER BY job_id DESC LIMIT ?",
+            (int(limit),),
+        )
+        rows = await cur.fetchall()
+        refreshed = 0
+        for r in rows:
+            jid = int(r[0])
+            try:
+                category = await self.db.get_job_category(int(jid))
+                if str(category or "").strip().lower() != "event":
+                    continue
+                await self._refresh_event_job_card(int(jid))
+                refreshed += 1
+            except Exception:
+                logger.debug("Failed refreshing event job card for %s", jid, exc_info=True)
+        return refreshed
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self._startup_event_refresh_done:
+            return
+        self._startup_event_refresh_done = True
+        try:
+            count = await self._refresh_all_event_job_cards(limit=250)
+            logger.info("Startup event job card refresh complete: %s cards", count)
+        except Exception:
+            logger.debug("Startup event job card refresh failed", exc_info=True)
 
     @commands.Cog.listener()
     async def on_raw_scheduled_event_user_add(self, payload: discord.RawScheduledEventSubscription):
