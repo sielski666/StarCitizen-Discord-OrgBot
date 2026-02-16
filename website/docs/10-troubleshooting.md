@@ -2,9 +2,9 @@
 
 
 ## Commands missing in Discord
-- restart service
 - verify bot permissions
 - verify command sync and guild context
+- wait 30–90 seconds after invite/setup, then check again
 
 ## Event template post denied
 - user needs Event Handler role or Admin
@@ -20,8 +20,9 @@
 - ensure snapshot is not empty
 - dry run with `/jobtest event_dryrun_payout`
 
-## Service logs
-```bash
-sudo systemctl status starcitizen-orgbot --no-pager
-sudo journalctl -u starcitizen-orgbot -n 200 --no-pager
-```
+## Service issues (hosted users)
+If you suspect service/runtime issues, contact the bot operator with:
+- server (guild) ID
+- command used
+- exact error text/screenshot
+- timestamp (UTC)

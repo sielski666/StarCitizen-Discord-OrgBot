@@ -8,7 +8,7 @@ Run setup commands after quick start and before production use.
 This command:
 - ensures required channels (`jobs`, `treasury`, `share-sell-confirm`)
 - ensures `Event Handler` role exists
-- writes/syncs IDs to `.env`
+- saves/syncs guild settings for current server
 - updates config for newer setup flow (event-handler support + channel/env sync)
 
 ## Step 2 — Validate setup
@@ -21,11 +21,8 @@ Check all required fields are present.
 
 Use if channels were deleted or changed.
 
-## Step 4 — Restart bot
-```bash
-sudo systemctl restart starcitizen-orgbot
-sudo systemctl status starcitizen-orgbot --no-pager
-```
+## Step 4 — Continue setup
+No restart is needed for hosted usage. Continue with role assignment and validation.
 
 ## Step 5 — Assign roles
 Assign appropriate members:
@@ -40,9 +37,6 @@ The top-right logo on job cards uses:
 
 To change it:
 1. Replace `assets/org_logo.png` with your org image.
-2. Restart bot service:
-   ```bash
-   sudo systemctl restart starcitizen-orgbot
-   ```
+2. If you are using the hosted bot, ask the operator to apply the logo update.
 
 If the file is missing, cards will send without a custom thumbnail logo.
