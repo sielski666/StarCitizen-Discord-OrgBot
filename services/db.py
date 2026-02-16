@@ -172,6 +172,14 @@ class Database:
             await self.conn.execute("ALTER TABLE jobs ADD COLUMN attendance_locked INTEGER NOT NULL DEFAULT 0")
         if "attendance_snapshot" not in existing:
             await self.conn.execute("ALTER TABLE jobs ADD COLUMN attendance_snapshot TEXT")
+        if "guild_id" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN guild_id INTEGER NOT NULL DEFAULT 0")
+            try:
+                legacy_gid = int(os.getenv("GUILD_ID", "0") or "0")
+            except Exception:
+                legacy_gid = 0
+            if legacy_gid > 0:
+                await self.conn.execute("UPDATE jobs SET guild_id=? WHERE guild_id=0", (int(legacy_gid),))
 
     async def close(self):
         if self.conn:
@@ -530,6 +538,7 @@ class Database:
         created_by: int,
         category: str | None = None,
         template_id: int | None = None,
+        guild_id: int | None = None,
     ) -> int:
         reward_i = int(reward)
 
@@ -545,8 +554,8 @@ class Database:
 
             cur = await self.conn.execute(
                 """
-                INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by, escrow_amount, escrow_status, funded, category, template_id)
-                VALUES(?,?,?,?,?,'open',?,?, 'reserved', 1, ?, ?)
+                INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by, escrow_amount, escrow_status, funded, category, template_id, guild_id)
+                VALUES(?,?,?,?,?,'open',?,?, 'reserved', 1, ?, ?, ?)
                 """,
                 (
                     int(channel_id),
@@ -558,6 +567,7 @@ class Database:
                     reward_i,
                     (str(category).strip() if category else None),
                     (int(template_id) if template_id is not None else None),
+                    (int(guild_id) if guild_id is not None else 0),
                 ),
             )
             job_id = int(cur.lastrowid)
@@ -578,15 +588,25 @@ class Database:
             await self._rollback()
             raise
 
-    async def get_job(self, job_id: int):
-        cur = await self.conn.execute(
-            """
-            SELECT job_id, channel_id, message_id, title, description, reward, status,
-                   created_by, claimed_by, thread_id, created_at, updated_at
-            FROM jobs WHERE job_id=?
-            """,
-            (int(job_id),),
-        )
+    async def get_job(self, job_id: int, guild_id: int | None = None):
+        if guild_id is None:
+            cur = await self.conn.execute(
+                """
+                SELECT job_id, channel_id, message_id, title, description, reward, status,
+                       created_by, claimed_by, thread_id, created_at, updated_at
+                FROM jobs WHERE job_id=?
+                """,
+                (int(job_id),),
+            )
+        else:
+            cur = await self.conn.execute(
+                """
+                SELECT job_id, channel_id, message_id, title, description, reward, status,
+                       created_by, claimed_by, thread_id, created_at, updated_at
+                FROM jobs WHERE job_id=? AND guild_id=?
+                """,
+                (int(job_id), int(guild_id)),
+            )
         return await cur.fetchone()
 
     async def get_job_template_by_name(self, name: str):

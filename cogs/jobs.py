@@ -452,6 +452,7 @@ class JobPostModal(discord.ui.Modal):
                     created_by=interaction.user.id,
                     category=self.category,
                     template_id=self.template_id,
+                    guild_id=(interaction.guild.id if interaction.guild else None),
                 )
             except ValueError as e:
                 await msg.delete()
@@ -667,7 +668,7 @@ class JobWorkflowView(discord.ui.View):
                     ephemeral=True,
                 )
 
-        row = await self.db.get_job(int(jid))
+        row = await self.db.get_job(int(jid), guild_id=(interaction.guild.id if interaction.guild else None))
         if not row:
             return await interaction.followup.send("Job not found.", ephemeral=True)
 
@@ -734,7 +735,7 @@ class JobWorkflowView(discord.ui.View):
         if not jid:
             return await interaction.followup.send("Could not read Job ID from message.", ephemeral=True)
 
-        row = await self.db.get_job(int(jid))
+        row = await self.db.get_job(int(jid), guild_id=(interaction.guild.id if interaction.guild else None))
         if not row:
             return await interaction.followup.send("Job not found.", ephemeral=True)
 
@@ -808,7 +809,7 @@ class JobWorkflowView(discord.ui.View):
         if not jid:
             return await interaction.followup.send("Could not read Job ID from message.", ephemeral=True)
 
-        row = await self.db.get_job(int(jid))
+        row = await self.db.get_job(int(jid), guild_id=(interaction.guild.id if interaction.guild else None))
         if not row:
             return await interaction.followup.send("Job not found.", ephemeral=True)
 
@@ -960,7 +961,7 @@ class JobsCog(commands.Cog):
         self._startup_event_refresh_done = False
 
     async def _refresh_event_job_card(self, job_id: int) -> None:
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return
 
@@ -1172,7 +1173,7 @@ class JobsCog(commands.Cog):
     @eventjob.command(name="attendee_add", description="(Finance/Admin) Manually add attendee to event job")
     @finance_or_admin()
     async def event_attendee_add(self, ctx: discord.ApplicationContext, job_id: int, member: discord.Member):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1188,7 +1189,7 @@ class JobsCog(commands.Cog):
     @eventjob.command(name="attendee_remove", description="(Finance/Admin) Manually remove attendee from event job")
     @finance_or_admin()
     async def event_attendee_remove(self, ctx: discord.ApplicationContext, job_id: int, member: discord.Member):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1203,7 +1204,7 @@ class JobsCog(commands.Cog):
 
     @eventjob.command(name="attendee_list", description="List attendees for an event job")
     async def event_attendee_list(self, ctx: discord.ApplicationContext, job_id: int):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1324,7 +1325,7 @@ class JobsCog(commands.Cog):
 
     @jobs.command(name="attend", description="Join an event job attendance list")
     async def attend(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
@@ -1345,7 +1346,7 @@ class JobsCog(commands.Cog):
 
     @jobs.command(name="unattend", description="Leave an event job attendance list")
     async def unattend(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
@@ -1362,7 +1363,7 @@ class JobsCog(commands.Cog):
 
     @jobs.command(name="attendees", description="Show current event attendees for a job")
     async def attendees(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
@@ -1380,7 +1381,7 @@ class JobsCog(commands.Cog):
     @jobs.command(name="attendance_lock", description="(Finance/Admin) Lock event attendance list")
     @finance_or_admin()
     async def attendance_lock(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1397,7 +1398,7 @@ class JobsCog(commands.Cog):
     @jobs.command(name="attendance_unlock", description="(Finance/Admin) Unlock event attendance list")
     @finance_or_admin()
     async def attendance_unlock(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1410,7 +1411,7 @@ class JobsCog(commands.Cog):
     @jobs.command(name="attendance_sync", description="(Finance/Admin) Force-sync attendance from scheduled event RSVPs")
     @finance_or_admin()
     async def attendance_sync(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         status = str(row[6])
@@ -1432,7 +1433,7 @@ class JobsCog(commands.Cog):
     @jobtest.command(name="event_sync_check", description="(Admin) Check linked event + RSVP counts")
     @admin_only()
     async def event_sync_check(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1472,7 +1473,7 @@ class JobsCog(commands.Cog):
     @jobtest.command(name="event_dryrun_payout", description="(Admin) Preview event payout split without paying")
     @admin_only()
     async def event_dryrun_payout(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         reward = int(row[5])
@@ -1501,7 +1502,7 @@ class JobsCog(commands.Cog):
     @jobtest.command(name="event_force_snapshot", description="(Admin) Sync RSVPs then snapshot+lock attendance")
     @admin_only()
     async def event_force_snapshot(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
         category = await self.db.get_job_category(int(job_id))
@@ -1523,7 +1524,7 @@ class JobsCog(commands.Cog):
 
     @jobs.command(name="complete", description="Mark a job as completed (claimer or admin)")
     async def complete(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
@@ -1595,7 +1596,7 @@ class JobsCog(commands.Cog):
     @jobs.command(name="confirm", description="(Finance/Admin) Confirm completed job and reward Org Points")
     @finance_or_admin()
     async def confirm(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
@@ -1758,7 +1759,7 @@ class JobsCog(commands.Cog):
     @jobs.command(name="cancel", description="(Admin) Cancel a job (locks/archives its thread)")
     @admin_only()
     async def cancel(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
@@ -1824,7 +1825,7 @@ class JobsCog(commands.Cog):
     @jobs.command(name="reopen", description="(Admin) Reopen a cancelled job (sets back to OPEN)")
     @admin_only()
     async def reopen(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
-        row = await self.db.get_job(int(job_id))
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.respond("Job not found.", ephemeral=True)
 
