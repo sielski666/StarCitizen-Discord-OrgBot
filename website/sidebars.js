@@ -3,7 +3,6 @@
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   tutorialSidebar: [
-    'install-update-guide',
     'intro',
     'setup-commands',
     'command-index',

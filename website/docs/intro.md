@@ -1,15 +1,15 @@
-# 02 - Quick Start
+# 02 - Startup Information
 
 ## Links
 - Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
 - Discord: https://discord.gg/BT8rpuX8R
 
 ## Baseline checks
-- Copy `.env.example` -> `.env` (remove `.example` suffix)
-- Manually set `DISCORD_TOKEN` in `.env`
-- Bot online in server
-- `/setup status` clean
-- Treasury initialized
+- Bot is online in your server
+- Run `/setup start`
+- Run `/setup status`
+- Confirm required channels/roles are configured
+- Treasury initialized for share cashout flows
 - At least one event template exists
 
 ## First operational flow
