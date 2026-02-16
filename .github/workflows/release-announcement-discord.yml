@@ -11,7 +11,7 @@ jobs:
   announce:
     runs-on: ubuntu-latest
     steps:
-      - name: Send release announcement to Discord
+      - name: Send release announcement to Discord (major/minor only)
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK_URL }}
           RELEASE_NAME: ${{ github.event.release.name }}
@@ -20,9 +20,39 @@ jobs:
           BODY: ${{ github.event.release.body }}
           AUTHOR: ${{ github.event.release.author.login }}
           REPO: ${{ github.repository }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
             echo "DISCORD_ANNOUNCEMENTS_WEBHOOK_URL is not set; skipping."
+            exit 0
+          fi
+
+          # Default policy: announce only major/minor releases.
+          # SemVer tags expected: vX.Y.Z (or X.Y.Z). Only Z=0 is announced.
+          # Override: include [announce] in release body to force an announcement.
+          TAG_CLEAN="${TAG_NAME#v}"
+          ANNOUNCE="false"
+
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "Prerelease detected; skipping announcement."
+            exit 0
+          fi
+
+          if echo "$TAG_CLEAN" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            PATCH="$(echo "$TAG_CLEAN" | cut -d. -f3)"
+            if [ "$PATCH" = "0" ]; then
+              ANNOUNCE="true"
+            fi
+          elif echo "$TAG_CLEAN" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+            ANNOUNCE="true"
+          fi
+
+          if printf "%s" "${BODY:-}" | grep -qi "\[announce\]"; then
+            ANNOUNCE="true"
+          fi
+
+          if [ "$ANNOUNCE" != "true" ]; then
+            echo "Patch release without [announce]; skipping Discord announcement."
             exit 0
           fi
 
@@ -37,7 +67,7 @@ jobs:
             --arg author "$AUTHOR" \
             --arg repo "$REPO" \
             '{
-              "content": "🚀 New release published",
+              "content": "🚀 Major update published",
               "embeds": [
                 {
                   "title": $title,
