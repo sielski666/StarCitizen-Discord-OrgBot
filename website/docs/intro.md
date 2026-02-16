@@ -4,13 +4,10 @@
 - Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
 - Discord: https://discord.gg/BT8rpuX8R
 
-## Baseline checks
-- Bot is online in your server
-- Run `/setup start`
-- Run `/setup status`
-- Confirm required channels/roles are configured
-- Treasury initialized for share cashout flows
-- At least one event template exists
+## Start here
+For hosted multi-server usage, server admins only need to:
+1. Run `/setup start`
+2. Run `/setup status`
 
 ## First operational flow
 1. Create event template: `/eventtemplate add`
