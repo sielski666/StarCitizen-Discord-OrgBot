@@ -756,18 +756,11 @@ class Database:
 
         await self._begin()
         try:
-            current_treasury = await self.get_treasury(guild_id=guild_id)
-            reserved = await self.get_reserved_job_escrow(guild_id=guild_id)
-            available = int(current_treasury) - int(reserved)
-            if available < reward_i:
-                raise ValueError(
-                    f"Insufficient available treasury for this job. Available: {available:,} aUEC, required: {reward_i:,} aUEC."
-                )
-
+            # Job rewards are attributed Org Points/Credits and do not reserve treasury.
             cur = await self.conn.execute(
                 """
                 INSERT INTO jobs(channel_id, message_id, title, description, reward, status, created_by, escrow_amount, escrow_status, funded, category, template_id, guild_id)
-                VALUES(?,?,?,?,?,'open',?,?, 'reserved', 1, ?, ?, ?)
+                VALUES(?,?,?,?,?,'open',?,?, 'none', 1, ?, ?, ?)
                 """,
                 (
                     int(channel_id),
@@ -776,23 +769,13 @@ class Database:
                     str(description),
                     reward_i,
                     int(created_by),
-                    reward_i,
+                    0,
                     (str(category).strip() if category else None),
                     (int(template_id) if template_id is not None else None),
                     (int(guild_id) if guild_id is not None else 0),
                 ),
             )
             job_id = int(cur.lastrowid)
-
-            await self.add_ledger_entry(
-                entry_type="escrow_reserved",
-                amount=reward_i,
-                from_account="treasury_available",
-                to_account=f"job_escrow:{job_id}",
-                reference_type="job",
-                reference_id=str(job_id),
-                notes="Reserved treasury for new job",
-            )
 
             await self._commit()
             return job_id
