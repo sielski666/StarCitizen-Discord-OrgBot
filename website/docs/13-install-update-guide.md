@@ -1,134 +1,27 @@
-# 01 - Install & Update Guide
+# 01 - Hosted Server Setup Guide
 
-Use this page if you want the **auto-update command** (`./scripts/update.sh`).
+This documentation set is focused on **hosted bot usage**.
 
-## Two install methods (important)
+If you are running your own deployment, keep self-host/install/update instructions in the public GitHub README.
 
-### A) Git clone install (recommended)
-- You install with `git clone`
-- Repo has `.git` history
-- You can update with one command: `./scripts/update.sh`
-- Best for long-term/self-hosted usage
+## What server admins should do
 
-### B) Release ZIP/manual install
-- You download source ZIP from GitHub releases/repo
-- No `.git` folder/history
-- `./scripts/update.sh` will **not** work
-- You must manually replace files on each update
+### 1) Invite the bot
+Use the official invite link provided by the bot operator.
 
-## Recommended install (supports auto-update)
+### 2) Run setup in your server
+- `/setup start`
+- `/setup status`
 
-### Linux / macOS
+### 3) Verify channels/roles
+Confirm setup created or mapped the required channels and roles for your guild.
 
-#### Step 1 — Clone repo
-```bash
-git clone https://github.com/sielski666/StarCitizen-Discord-OrgBot.git
-cd StarCitizen-Discord-OrgBot
-```
+### 4) Validate core flow
+- Post one normal job
+- Post one event job
+- Confirm finance/account commands respond as expected
 
-#### Step 2 — Create and activate virtualenv
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-#### Step 3 — Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-#### Step 4 — Configure environment
-```bash
-cp .env.example .env
-```
-Then edit `.env` and set at least:
-- `DISCORD_TOKEN`
-- required guild/role/channel IDs (or run `/setup start`)
-
-#### Step 5 — Run bot
-```bash
-python bot.py
-```
-
-### Windows (PowerShell)
-
-#### Step 1 — Clone repo
-```powershell
-git clone https://github.com/sielski666/StarCitizen-Discord-OrgBot.git
-cd StarCitizen-Discord-OrgBot
-```
-
-#### Step 2 — Create and activate virtualenv
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-#### Step 3 — Install dependencies
-```powershell
-pip install -r requirements.txt
-```
-
-#### Step 4 — Configure environment
-```powershell
-Copy-Item .env.example .env
-```
-Then edit `.env` and set at least:
-- `DISCORD_TOKEN`
-- required guild/role/channel IDs (or run `/setup start`)
-
-#### Step 5 — Run bot
-```powershell
-python bot.py
-```
-
-## Auto-update flow (git install only)
-
-### Linux / macOS
-From repo root:
-```bash
-./scripts/update.sh
-```
-
-### Windows (PowerShell)
-From repo root:
-```powershell
-.\scripts\update.ps1
-```
-
-What the updater scripts do:
-1. fetch latest `origin/main`
-2. fast-forward local repo
-3. update dependencies
-4. run compile checks
-5. restart service/process (when configured)
-6. roll back to previous commit if update fails
-
-## Manual update flow (ZIP/manual installs)
-
-If you installed without git history:
-1. Download latest release/source
-2. Stop bot service/process
-3. Replace project files
-4. Reinstall dependencies (`pip install -r requirements.txt`)
-5. Start/restart bot service
-
-## Quick check after any update
-
-### Linux (systemd)
-```bash
-sudo systemctl status starcitizen-orgbot --no-pager
-```
-
-### Windows (manual run)
-- confirm the bot process is running in your terminal
-- verify no startup errors in console output
-
-And in Discord:
-- run `/setup status`
-- run one test job flow
-
-## Multi-org smoke checklist
+## Multi-server smoke checklist
 If you run the bot in multiple Discord servers, run this in each server:
 1. `/setup start`
 2. `/setup status` (verify guild live/config values)
