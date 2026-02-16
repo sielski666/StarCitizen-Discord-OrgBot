@@ -126,7 +126,7 @@ class SetupModal(discord.ui.Modal):
             f"Jobs: <#{jobs_channel_id}>\n"
             f"Treasury: <#{treasury_channel_id}>\n"
             f"Shares Sell: <#{shares_sell_channel_id}>\n"
-            "Run: `sudo systemctl restart starcitizen-orgbot` to apply config updates.",
+            "If self-hosting: restart the bot only after `.env` or deployment changes. If hosted by the bot operator, no restart action is needed in your server.",
             ephemeral=True,
         )
 
@@ -346,7 +346,7 @@ class SetupCog(commands.Cog):
         if missing_roles:
             msg += "\n\n⚠️ Missing role IDs in .env: " + ", ".join(missing_roles)
 
-        msg += "\n\nRun: `sudo systemctl restart starcitizen-orgbot` to apply config changes."
+        msg += "\n\nIf self-hosting: restart only after `.env`/deployment changes. If hosted for you by the bot operator, no restart action is required in your server."
         await ctx.respond(msg, ephemeral=True)
 
     @setup_group.command(name="status", description="Show current setup values")
@@ -442,7 +442,7 @@ class SetupCog(commands.Cog):
             f"Treasury: <#{treasury_id}>\n"
             f"Shares Sell: <#{shares_id}>\n"
             f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
-            "Run: `sudo systemctl restart starcitizen-orgbot` to apply.",
+            "Self-host only: restart after `.env` or deployment changes. Hosted users do not need to restart anything.",
             ephemeral=True,
         )
 
