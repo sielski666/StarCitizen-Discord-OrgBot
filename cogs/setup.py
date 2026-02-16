@@ -119,6 +119,7 @@ class SetupModal(discord.ui.Modal):
         }
 
         self.cog._write_env(updates)
+        await self.cog._persist_guild_updates(guild.id if guild else None, updates)
 
         await interaction.response.send_message(
             "✅ Setup saved + channels ensured\n"
@@ -133,6 +134,7 @@ class SetupModal(discord.ui.Modal):
 class SetupCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.db = getattr(bot, "db", None)
 
     setup_group = discord.SlashCommandGroup("setup", "Server setup and config helpers")
 
@@ -251,6 +253,26 @@ class SetupCog(commands.Cog):
 
         ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    async def _get_effective_config(self, guild_id: int | None = None) -> dict[str, str]:
+        env = self._read_env()
+        if not guild_id or self.db is None:
+            return env
+        try:
+            stored = await self.db.get_guild_settings(int(guild_id))
+            merged = dict(env)
+            merged.update(stored)
+            return merged
+        except Exception:
+            return env
+
+    async def _persist_guild_updates(self, guild_id: int | None, updates: dict[str, str]) -> None:
+        if not guild_id or self.db is None:
+            return
+        try:
+            await self.db.set_guild_settings(int(guild_id), {k: str(v).strip() for k, v in updates.items()})
+        except Exception:
+            pass
+
     @setup_group.command(name="start", description="Auto-setup from env + create missing channels")
     async def setup_start(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
@@ -261,7 +283,7 @@ class SetupCog(commands.Cog):
         if guild is None:
             return await ctx.respond("Guild context required.", ephemeral=True)
 
-        env = self._read_env()
+        env = await self._get_effective_config(guild.id)
 
         ensured = await self._ensure_channels(
             guild,
@@ -306,6 +328,7 @@ class SetupCog(commands.Cog):
             "JOB_CATEGORY_CHANNEL_MAP": area_map_value,
         }
         self._write_env(updates)
+        await self._persist_guild_updates(guild.id, updates)
 
         missing_roles = [
             k for k in ("FINANCE_ROLE_ID", "JOBS_ADMIN_ROLE_ID") if not env.get(k)
@@ -332,7 +355,8 @@ class SetupCog(commands.Cog):
         if not member or not is_admin_member(member):
             return await ctx.respond("Admin only.", ephemeral=True)
 
-        env = self._read_env()
+        guild = ctx.guild
+        env = await self._get_effective_config(guild.id if guild else None)
         required = [
             "DISCORD_TOKEN",
             "GUILD_ID",
@@ -375,7 +399,7 @@ class SetupCog(commands.Cog):
         if guild is None:
             return await ctx.respond("Guild context required.", ephemeral=True)
 
-        env = self._read_env()
+        env = await self._get_effective_config(guild.id)
 
         ensured = await self._ensure_channels(
             guild,
@@ -405,6 +429,7 @@ class SetupCog(commands.Cog):
             "JOB_CATEGORY_CHANNEL_MAP": ",".join(f"{k}:{v}" for k, v in area_map.items()),
         }
         self._write_env(updates)
+        await self._persist_guild_updates(guild.id, updates)
 
         await ctx.respond(
             "✅ Channels ready\n"

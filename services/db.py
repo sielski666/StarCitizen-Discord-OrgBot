@@ -130,6 +130,14 @@ CREATE TABLE IF NOT EXISTS job_event_links (
   job_id INTEGER NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS guild_settings (
+  guild_id INTEGER NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (guild_id, key)
+);
 """
 
 
@@ -169,6 +177,45 @@ class Database:
         if self.conn:
             await self.conn.close()
             self.conn = None
+
+    async def set_guild_setting(self, guild_id: int, key: str, value: str) -> None:
+        await self.conn.execute(
+            """
+            INSERT INTO guild_settings(guild_id, key, value, updated_at)
+            VALUES(?,?,?,datetime('now'))
+            ON CONFLICT(guild_id, key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')
+            """,
+            (int(guild_id), str(key), str(value)),
+        )
+        await self.conn.commit()
+
+    async def set_guild_settings(self, guild_id: int, updates: dict[str, str]) -> None:
+        for k, v in updates.items():
+            await self.conn.execute(
+                """
+                INSERT INTO guild_settings(guild_id, key, value, updated_at)
+                VALUES(?,?,?,datetime('now'))
+                ON CONFLICT(guild_id, key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')
+                """,
+                (int(guild_id), str(k), str(v)),
+            )
+        await self.conn.commit()
+
+    async def get_guild_setting(self, guild_id: int, key: str) -> str | None:
+        cur = await self.conn.execute(
+            "SELECT value FROM guild_settings WHERE guild_id=? AND key=?",
+            (int(guild_id), str(key)),
+        )
+        row = await cur.fetchone()
+        return str(row[0]) if row and row[0] is not None else None
+
+    async def get_guild_settings(self, guild_id: int) -> dict[str, str]:
+        cur = await self.conn.execute(
+            "SELECT key, value FROM guild_settings WHERE guild_id=?",
+            (int(guild_id),),
+        )
+        rows = await cur.fetchall()
+        return {str(k): str(v) for k, v in rows}
 
     async def _begin(self):
         await self.conn.execute("BEGIN IMMEDIATE")
