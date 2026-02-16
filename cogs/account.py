@@ -181,7 +181,7 @@ class CashoutPersistentView(discord.ui.View):
 
         # Unlock shares back
         try:
-            await self.db.unlock_shares(requester_id, int(shares))
+            await self.db.unlock_shares(requester_id, int(shares), guild_id=(interaction.guild.id if interaction.guild else None))
         except Exception:
             logger.exception("Failed to unlock shares for requester_id=%s request_id=%s", requester_id, rid)
 
@@ -328,7 +328,7 @@ class AccountCog(commands.Cog):
         if not LEVEL_ROLE_MAP:
             return {"changed": False, "reason": "LEVEL_ROLE_MAP not configured"}
 
-        lvl_now = await self.db.get_level(member.id, per_level=LEVEL_PER_REP)
+        lvl_now = await self.db.get_level(member.id, per_level=LEVEL_PER_REP, guild_id=(member.guild.id if member.guild else None))
         expected_role_id = _expected_tier_role_id(int(lvl_now))
 
         tier_role_ids = set(int(x) for x in LEVEL_ROLE_MAP.values())
@@ -399,12 +399,12 @@ class AccountCog(commands.Cog):
     # =======================
     @account.command(name="overview", description="View your Org Credits, Shares, Reputation, Level, and Tier")
     async def overview(self, ctx: discord.ApplicationContext):
-        bal = await self.db.get_balance(ctx.author.id)
-        shares_total = await self.db.get_shares(ctx.author.id)
-        shares_locked = await self.db.get_shares_locked(ctx.author.id)
-        shares_available = await self.db.get_shares_available(ctx.author.id)
-        rep = await self.db.get_rep(ctx.author.id)
-        level = await self.db.get_level(ctx.author.id, per_level=LEVEL_PER_REP)
+        bal = await self.db.get_balance(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
+        shares_total = await self.db.get_shares(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
+        shares_locked = await self.db.get_shares_locked(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
+        shares_available = await self.db.get_shares_available(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
+        rep = await self.db.get_rep(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
+        level = await self.db.get_level(ctx.author.id, per_level=LEVEL_PER_REP, guild_id=(ctx.guild.id if ctx.guild else None))
 
         tier_text = _tier_display_for_level(int(level))
         expected_role_id = _expected_tier_role_id(int(level))
@@ -452,8 +452,8 @@ class AccountCog(commands.Cog):
         if not target:
             return await ctx.followup.send("Could not resolve a target member.", ephemeral=True)
 
-        rep = await self.db.get_rep(target.id)
-        level = await self.db.get_level(target.id, per_level=LEVEL_PER_REP)
+        rep = await self.db.get_rep(target.id, guild_id=(ctx.guild.id if ctx.guild else None))
+        level = await self.db.get_level(target.id, per_level=LEVEL_PER_REP, guild_id=(ctx.guild.id if ctx.guild else None))
 
         tier_disp = _tier_display_for_level(int(level))
         expected_role_id = _expected_tier_role_id(int(level))
@@ -565,7 +565,7 @@ class AccountCog(commands.Cog):
         for m in targets:
             scanned += 1
             if dry_run:
-                lvl_now = await self.db.get_level(m.id, per_level=LEVEL_PER_REP)
+                lvl_now = await self.db.get_level(m.id, per_level=LEVEL_PER_REP, guild_id=(ctx.guild.id if ctx.guild else None))
                 expected_role_id = _expected_tier_role_id(int(lvl_now))
                 tier_role_ids = set(int(x) for x in LEVEL_ROLE_MAP.values())
                 current_tier_roles = [r for r in m.roles if int(r.id) in tier_role_ids]
@@ -680,6 +680,7 @@ class AccountCog(commands.Cog):
                 shares_delta=int(shares),
                 cost=int(cost),
                 reference=f"buy {shares}",
+                guild_id=(ctx.guild.id if ctx.guild else None),
             )
         except ValueError as e:
             return await ctx.respond(str(e), ephemeral=True)
@@ -706,17 +707,17 @@ class AccountCog(commands.Cog):
         if shares < 1:
             return await ctx.followup.send("Shares must be at least 1.", ephemeral=True)
 
-        available = await self.db.get_shares_available(ctx.author.id)
+        available = await self.db.get_shares_available(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
         if available < int(shares):
-            locked = await self.db.get_shares_locked(ctx.author.id)
-            total = await self.db.get_shares(ctx.author.id)
+            locked = await self.db.get_shares_locked(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
+            total = await self.db.get_shares(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
             return await ctx.followup.send(
                 f"Not enough **available** shares.\nTotal: `{total:,}` | Locked: `{locked:,}` | Available: `{available:,}`",
                 ephemeral=True,
             )
 
         try:
-            await self.db.lock_shares(ctx.author.id, int(shares))
+            await self.db.lock_shares(ctx.author.id, int(shares), guild_id=(ctx.guild.id if ctx.guild else None))
         except ValueError as e:
             return await ctx.followup.send(str(e), ephemeral=True)
 

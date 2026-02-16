@@ -200,7 +200,7 @@ async def _sync_member_tier_roles(
     if not LEVEL_ROLE_MAP:
         return {"changed": False, "reason": "LEVEL_ROLE_MAP not configured"}
 
-    lvl_now = await db.get_level(member.id, per_level=LEVEL_PER_REP)
+    lvl_now = await db.get_level(member.id, per_level=LEVEL_PER_REP, guild_id=(member.guild.id if member.guild else None))
     expected_role_id = _expected_tier_role_id(int(lvl_now))
     tier_role_ids = set(int(x) for x in LEVEL_ROLE_MAP.values())
 
@@ -661,7 +661,7 @@ class JobWorkflowView(discord.ui.View):
         min_level = _extract_min_level_from_embed(embed)
 
         if int(min_level) > 0:
-            lvl = await self.db.get_level(interaction.user.id, per_level=LEVEL_PER_REP)
+            lvl = await self.db.get_level(interaction.user.id, per_level=LEVEL_PER_REP, guild_id=(interaction.guild.id if interaction.guild else None))
             if int(lvl) < int(min_level):
                 return await interaction.followup.send(
                     f"You need **Level {int(min_level)}** to accept this job.\nYou are **Level {int(lvl)}**.",
@@ -877,16 +877,18 @@ class JobWorkflowView(discord.ui.View):
                 amount=int(amount),
                 tx_type="payout",
                 reference=f"job:{job_id_db}|by:{interaction.user.id}",
+                guild_id=(interaction.guild.id if interaction.guild else None),
             )
             payout_note_parts.append(f"{uid}:{int(amount)}")
 
-            before_level = await self.db.get_level(int(uid), per_level=LEVEL_PER_REP)
+            before_level = await self.db.get_level(int(uid), per_level=LEVEL_PER_REP, guild_id=(interaction.guild.id if interaction.guild else None))
             if int(REP_PER_JOB_PAYOUT) > 0:
                 try:
                     await self.db.add_rep(
                         discord_id=int(uid),
                         amount=int(REP_PER_JOB_PAYOUT),
                         reference=f"job:{job_id_db}|confirm_by:{interaction.user.id}",
+                        guild_id=(interaction.guild.id if interaction.guild else None),
                     )
                     rep_added_total += int(REP_PER_JOB_PAYOUT)
                 except Exception:
@@ -1664,6 +1666,7 @@ class JobsCog(commands.Cog):
                 amount=int(amount),
                 tx_type="payout",
                 reference=f"job:{jid}|by:{ctx.author.id}",
+                guild_id=(ctx.guild.id if ctx.guild else None),
             )
             payout_note_parts.append(f"{uid}:{int(amount)}")
 
@@ -1678,7 +1681,7 @@ class JobsCog(commands.Cog):
 
             before_level = None
             if member_obj:
-                before_level = await self.db.get_level(member_obj.id, per_level=LEVEL_PER_REP)
+                before_level = await self.db.get_level(member_obj.id, per_level=LEVEL_PER_REP, guild_id=(ctx.guild.id if ctx.guild else None))
 
             if int(REP_PER_JOB_PAYOUT) > 0:
                 try:
@@ -1686,6 +1689,7 @@ class JobsCog(commands.Cog):
                         discord_id=int(uid),
                         amount=int(REP_PER_JOB_PAYOUT),
                         reference=f"job:{jid}|payout_by:{ctx.author.id}",
+                        guild_id=(ctx.guild.id if ctx.guild else None),
                     )
                     rep_added_total += int(REP_PER_JOB_PAYOUT)
                 except Exception:

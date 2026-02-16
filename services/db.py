@@ -26,9 +26,23 @@ CREATE TABLE IF NOT EXISTS wallets (
   balance INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS wallets_by_guild (
+  guild_id INTEGER NOT NULL,
+  discord_id INTEGER NOT NULL,
+  balance INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, discord_id)
+);
+
 CREATE TABLE IF NOT EXISTS shareholdings (
   discord_id INTEGER PRIMARY KEY,
   shares INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS shareholdings_by_guild (
+  guild_id INTEGER NOT NULL,
+  discord_id INTEGER NOT NULL,
+  shares INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, discord_id)
 );
 
 CREATE TABLE IF NOT EXISTS reputation (
@@ -36,9 +50,23 @@ CREATE TABLE IF NOT EXISTS reputation (
   rep INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS reputation_by_guild (
+  guild_id INTEGER NOT NULL,
+  discord_id INTEGER NOT NULL,
+  rep INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, discord_id)
+);
+
 CREATE TABLE IF NOT EXISTS shares_escrow (
   discord_id INTEGER PRIMARY KEY,
   locked_shares INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS shares_escrow_by_guild (
+  guild_id INTEGER NOT NULL,
+  discord_id INTEGER NOT NULL,
+  locked_shares INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, discord_id)
 );
 
 -- Treasury is a single-row table (id=1)
@@ -97,6 +125,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   shares_delta INTEGER NOT NULL DEFAULT 0,
   rep_delta INTEGER NOT NULL DEFAULT 0,
   reference TEXT,
+  guild_id INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -160,6 +189,7 @@ class Database:
         await self.conn.execute("INSERT OR IGNORE INTO treasury(id, amount) VALUES(1, 0)")
         await self._ensure_jobs_columns()
         await self._ensure_ledger_columns()
+        await self._ensure_transactions_columns()
         await self.conn.commit()
 
     async def _ensure_jobs_columns(self):
@@ -196,6 +226,13 @@ class Database:
         existing = {str(r[1]) for r in rows}
         if "guild_id" not in existing:
             await self.conn.execute("ALTER TABLE ledger_entries ADD COLUMN guild_id INTEGER NOT NULL DEFAULT 0")
+
+    async def _ensure_transactions_columns(self):
+        cur = await self.conn.execute("PRAGMA table_info(transactions)")
+        rows = await cur.fetchall()
+        existing = {str(r[1]) for r in rows}
+        if "guild_id" not in existing:
+            await self.conn.execute("ALTER TABLE transactions ADD COLUMN guild_id INTEGER NOT NULL DEFAULT 0")
 
     async def close(self):
         if self.conn:
@@ -339,45 +376,75 @@ class Database:
         drift = int(current) - int(ledger_treasury)
         return int(current), int(ledger_treasury), int(drift), baseline_at
 
-    async def ensure_member(self, discord_id: int):
-        await self.conn.execute(
-            "INSERT OR IGNORE INTO wallets(discord_id, balance) VALUES(?, 0)",
-            (int(discord_id),),
-        )
-        await self.conn.execute(
-            "INSERT OR IGNORE INTO shareholdings(discord_id, shares) VALUES(?, 0)",
-            (int(discord_id),),
-        )
-        await self.conn.execute(
-            "INSERT OR IGNORE INTO shares_escrow(discord_id, locked_shares) VALUES(?, 0)",
-            (int(discord_id),),
-        )
-        await self.conn.execute(
-            "INSERT OR IGNORE INTO reputation(discord_id, rep) VALUES(?, 0)",
-            (int(discord_id),),
-        )
+    async def ensure_member(self, discord_id: int, guild_id: int | None = None):
+        if guild_id is None:
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO wallets(discord_id, balance) VALUES(?, 0)",
+                (int(discord_id),),
+            )
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO shareholdings(discord_id, shares) VALUES(?, 0)",
+                (int(discord_id),),
+            )
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO shares_escrow(discord_id, locked_shares) VALUES(?, 0)",
+                (int(discord_id),),
+            )
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO reputation(discord_id, rep) VALUES(?, 0)",
+                (int(discord_id),),
+            )
+        else:
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO wallets_by_guild(guild_id, discord_id, balance) VALUES(?,?,0)",
+                (int(guild_id), int(discord_id)),
+            )
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO shareholdings_by_guild(guild_id, discord_id, shares) VALUES(?,?,0)",
+                (int(guild_id), int(discord_id)),
+            )
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO shares_escrow_by_guild(guild_id, discord_id, locked_shares) VALUES(?,?,0)",
+                (int(guild_id), int(discord_id)),
+            )
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO reputation_by_guild(guild_id, discord_id, rep) VALUES(?,?,0)",
+                (int(guild_id), int(discord_id)),
+            )
         await self.conn.commit()
 
     # =========================
     # BALANCE / SHARES / REP
     # =========================
-    async def get_balance(self, discord_id: int) -> int:
-        await self.ensure_member(discord_id)
-        cur = await self.conn.execute("SELECT balance FROM wallets WHERE discord_id=?", (int(discord_id),))
+    async def get_balance(self, discord_id: int, guild_id: int | None = None) -> int:
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT balance FROM wallets WHERE discord_id=?", (int(discord_id),))
+        else:
+            cur = await self.conn.execute(
+                "SELECT balance FROM wallets_by_guild WHERE guild_id=? AND discord_id=?",
+                (int(guild_id), int(discord_id)),
+            )
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    async def add_balance(self, discord_id: int, amount: int, tx_type: str, reference: str | None = None):
-        await self.ensure_member(discord_id)
+    async def add_balance(self, discord_id: int, amount: int, tx_type: str, reference: str | None = None, guild_id: int | None = None):
+        await self.ensure_member(discord_id, guild_id=guild_id)
         await self._begin()
         try:
+            if guild_id is None:
+                await self.conn.execute(
+                    "UPDATE wallets SET balance = balance + ? WHERE discord_id=?",
+                    (int(amount), int(discord_id)),
+                )
+            else:
+                await self.conn.execute(
+                    "UPDATE wallets_by_guild SET balance = balance + ? WHERE guild_id=? AND discord_id=?",
+                    (int(amount), int(guild_id), int(discord_id)),
+                )
             await self.conn.execute(
-                "UPDATE wallets SET balance = balance + ? WHERE discord_id=?",
-                (int(amount), int(discord_id)),
-            )
-            await self.conn.execute(
-                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
-                (int(discord_id), str(tx_type), int(amount), 0, 0, reference),
+                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference, guild_id) VALUES(?,?,?,?,?,?,?)",
+                (int(discord_id), str(tx_type), int(amount), 0, 0, reference, int(guild_id) if guild_id is not None else 0),
             )
             if str(tx_type) == "payout" and int(amount) > 0:
                 await self.add_ledger_entry(
@@ -388,47 +455,70 @@ class Database:
                     reference_type="job",
                     reference_id=str(reference or ""),
                     notes="Job payout",
+                    guild_id=guild_id,
                 )
             await self._commit()
         except Exception:
             await self._rollback()
             raise
 
-    async def get_shares(self, discord_id: int) -> int:
-        await self.ensure_member(discord_id)
-        cur = await self.conn.execute("SELECT shares FROM shareholdings WHERE discord_id=?", (int(discord_id),))
+    async def get_shares(self, discord_id: int, guild_id: int | None = None) -> int:
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT shares FROM shareholdings WHERE discord_id=?", (int(discord_id),))
+        else:
+            cur = await self.conn.execute(
+                "SELECT shares FROM shareholdings_by_guild WHERE guild_id=? AND discord_id=?",
+                (int(guild_id), int(discord_id)),
+            )
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    async def get_shares_locked(self, discord_id: int) -> int:
-        await self.ensure_member(discord_id)
-        cur = await self.conn.execute("SELECT locked_shares FROM shares_escrow WHERE discord_id=?", (int(discord_id),))
+    async def get_shares_locked(self, discord_id: int, guild_id: int | None = None) -> int:
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT locked_shares FROM shares_escrow WHERE discord_id=?", (int(discord_id),))
+        else:
+            cur = await self.conn.execute(
+                "SELECT locked_shares FROM shares_escrow_by_guild WHERE guild_id=? AND discord_id=?",
+                (int(guild_id), int(discord_id)),
+            )
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    async def get_shares_available(self, discord_id: int) -> int:
-        total = await self.get_shares(discord_id)
-        locked = await self.get_shares_locked(discord_id)
+    async def get_shares_available(self, discord_id: int, guild_id: int | None = None) -> int:
+        total = await self.get_shares(discord_id, guild_id=guild_id)
+        locked = await self.get_shares_locked(discord_id, guild_id=guild_id)
         return max(0, int(total) - int(locked))
 
-    async def buy_shares(self, discord_id: int, shares_delta: int, cost: int, reference: str | None = None):
-        await self.ensure_member(discord_id)
-        bal = await self.get_balance(discord_id)
+    async def buy_shares(self, discord_id: int, shares_delta: int, cost: int, reference: str | None = None, guild_id: int | None = None):
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        bal = await self.get_balance(discord_id, guild_id=guild_id)
         if bal < int(cost):
             raise ValueError("Not enough Org Credits to buy shares.")
         await self._begin()
         try:
+            if guild_id is None:
+                await self.conn.execute(
+                    "UPDATE wallets SET balance = balance - ? WHERE discord_id=?",
+                    (int(cost), int(discord_id)),
+                )
+                await self.conn.execute(
+                    "UPDATE shareholdings SET shares = shares + ? WHERE discord_id=?",
+                    (int(shares_delta), int(discord_id)),
+                )
+            else:
+                await self.conn.execute(
+                    "UPDATE wallets_by_guild SET balance = balance - ? WHERE guild_id=? AND discord_id=?",
+                    (int(cost), int(guild_id), int(discord_id)),
+                )
+                await self.conn.execute(
+                    "UPDATE shareholdings_by_guild SET shares = shares + ? WHERE guild_id=? AND discord_id=?",
+                    (int(shares_delta), int(guild_id), int(discord_id)),
+                )
             await self.conn.execute(
-                "UPDATE wallets SET balance = balance - ? WHERE discord_id=?",
-                (int(cost), int(discord_id)),
-            )
-            await self.conn.execute(
-                "UPDATE shareholdings SET shares = shares + ? WHERE discord_id=?",
-                (int(shares_delta), int(discord_id)),
-            )
-            await self.conn.execute(
-                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
-                (int(discord_id), "buy_shares", -int(cost), int(shares_delta), 0, reference),
+                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference, guild_id) VALUES(?,?,?,?,?,?,?)",
+                (int(discord_id), "buy_shares", -int(cost), int(shares_delta), 0, reference, int(guild_id) if guild_id is not None else 0),
             )
             await self.add_ledger_entry(
                 entry_type="shares_bought",
@@ -438,37 +528,50 @@ class Database:
                 reference_type="shares",
                 reference_id=str(reference or ""),
                 notes=f"Bought {int(shares_delta)} shares",
+                guild_id=guild_id,
             )
             await self._commit()
         except Exception:
             await self._rollback()
             raise
 
-    async def get_rep(self, discord_id: int) -> int:
-        await self.ensure_member(discord_id)
-        cur = await self.conn.execute("SELECT rep FROM reputation WHERE discord_id=?", (int(discord_id),))
+    async def get_rep(self, discord_id: int, guild_id: int | None = None) -> int:
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT rep FROM reputation WHERE discord_id=?", (int(discord_id),))
+        else:
+            cur = await self.conn.execute(
+                "SELECT rep FROM reputation_by_guild WHERE guild_id=? AND discord_id=?",
+                (int(guild_id), int(discord_id)),
+            )
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    async def add_rep(self, discord_id: int, amount: int, reference: str | None = None):
-        await self.ensure_member(discord_id)
+    async def add_rep(self, discord_id: int, amount: int, reference: str | None = None, guild_id: int | None = None):
+        await self.ensure_member(discord_id, guild_id=guild_id)
         await self._begin()
         try:
+            if guild_id is None:
+                await self.conn.execute(
+                    "UPDATE reputation SET rep = rep + ? WHERE discord_id=?",
+                    (int(amount), int(discord_id)),
+                )
+            else:
+                await self.conn.execute(
+                    "UPDATE reputation_by_guild SET rep = rep + ? WHERE guild_id=? AND discord_id=?",
+                    (int(amount), int(guild_id), int(discord_id)),
+                )
             await self.conn.execute(
-                "UPDATE reputation SET rep = rep + ? WHERE discord_id=?",
-                (int(amount), int(discord_id)),
-            )
-            await self.conn.execute(
-                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference) VALUES(?,?,?,?,?,?)",
-                (int(discord_id), "rep", 0, 0, int(amount), reference),
+                "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference, guild_id) VALUES(?,?,?,?,?,?,?)",
+                (int(discord_id), "rep", 0, 0, int(amount), reference, int(guild_id) if guild_id is not None else 0),
             )
             await self._commit()
         except Exception:
             await self._rollback()
             raise
 
-    async def get_level(self, discord_id: int, per_level: int = 100) -> int:
-        rep = await self.get_rep(discord_id)
+    async def get_level(self, discord_id: int, per_level: int = 100, guild_id: int | None = None) -> int:
+        rep = await self.get_rep(discord_id, guild_id=guild_id)
         return int(rep) // int(per_level)
 
     # =========================
@@ -1028,15 +1131,21 @@ class Database:
     # =========================
     # SHARES ESCROW (CASHOUT)
     # =========================
-    async def lock_shares(self, discord_id: int, shares: int):
-        await self.ensure_member(discord_id)
-        available = await self.get_shares_available(discord_id)
+    async def lock_shares(self, discord_id: int, shares: int, guild_id: int | None = None):
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        available = await self.get_shares_available(discord_id, guild_id=guild_id)
         if available < int(shares):
             raise ValueError("Not enough available shares to lock.")
-        await self.conn.execute(
-            "UPDATE shares_escrow SET locked_shares = locked_shares + ? WHERE discord_id=?",
-            (int(shares), int(discord_id)),
-        )
+        if guild_id is None:
+            await self.conn.execute(
+                "UPDATE shares_escrow SET locked_shares = locked_shares + ? WHERE discord_id=?",
+                (int(shares), int(discord_id)),
+            )
+        else:
+            await self.conn.execute(
+                "UPDATE shares_escrow_by_guild SET locked_shares = locked_shares + ? WHERE guild_id=? AND discord_id=?",
+                (int(shares), int(guild_id), int(discord_id)),
+            )
         await self.add_ledger_entry(
             entry_type="escrow_reserved",
             amount=int(shares),
@@ -1048,14 +1157,20 @@ class Database:
         )
         await self.conn.commit()
 
-    async def unlock_shares(self, discord_id: int, shares: int):
-        await self.ensure_member(discord_id)
-        locked = await self.get_shares_locked(discord_id)
+    async def unlock_shares(self, discord_id: int, shares: int, guild_id: int | None = None):
+        await self.ensure_member(discord_id, guild_id=guild_id)
+        locked = await self.get_shares_locked(discord_id, guild_id=guild_id)
         to_unlock = min(int(locked), int(shares))
-        await self.conn.execute(
-            "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
-            (int(to_unlock), int(discord_id)),
-        )
+        if guild_id is None:
+            await self.conn.execute(
+                "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
+                (int(to_unlock), int(discord_id)),
+            )
+        else:
+            await self.conn.execute(
+                "UPDATE shares_escrow_by_guild SET locked_shares = locked_shares - ? WHERE guild_id=? AND discord_id=?",
+                (int(to_unlock), int(guild_id), int(discord_id)),
+            )
         if int(to_unlock) > 0:
             await self.add_ledger_entry(
                 entry_type="escrow_released",
@@ -1095,8 +1210,8 @@ class Database:
             raise ValueError(f"Request must be approved first (status: {status}).")
 
         lcur = await self.conn.execute(
-            "SELECT locked_shares FROM shares_escrow WHERE discord_id=?",
-            (int(requester_id),),
+            "SELECT locked_shares FROM shares_escrow_by_guild WHERE guild_id=? AND discord_id=?",
+            (int(request_guild_id), int(requester_id)),
         )
         lrow = await lcur.fetchone()
         locked = int(lrow[0]) if lrow else 0
@@ -1104,8 +1219,8 @@ class Database:
             raise ValueError("Not enough locked shares to finalize this cash-out.")
 
         hcur = await self.conn.execute(
-            "SELECT shares FROM shareholdings WHERE discord_id=?",
-            (int(requester_id),),
+            "SELECT shares FROM shareholdings_by_guild WHERE guild_id=? AND discord_id=?",
+            (int(request_guild_id), int(requester_id)),
         )
         hrow = await hcur.fetchone()
         holding = int(hrow[0]) if hrow else 0
@@ -1130,8 +1245,8 @@ class Database:
                 )
 
             await self.conn.execute(
-                "UPDATE shares_escrow SET locked_shares = locked_shares - ? WHERE discord_id=?",
-                (int(shares), int(requester_id)),
+                "UPDATE shares_escrow_by_guild SET locked_shares = locked_shares - ? WHERE guild_id=? AND discord_id=?",
+                (int(shares), int(request_guild_id), int(requester_id)),
             )
             await self.add_ledger_entry(
                 entry_type="escrow_released",
@@ -1144,8 +1259,8 @@ class Database:
                 guild_id=request_guild_id,
             )
             await self.conn.execute(
-                "UPDATE shareholdings SET shares = shares - ? WHERE discord_id=?",
-                (int(shares), int(requester_id)),
+                "UPDATE shareholdings_by_guild SET shares = shares - ? WHERE guild_id=? AND discord_id=?",
+                (int(shares), int(request_guild_id), int(requester_id)),
             )
             await self.conn.execute(
                 "UPDATE cashout_requests SET status='paid', handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
