@@ -51,9 +51,24 @@ async def on_ready():
         bot.job_workflow_registered = True  # type: ignore
         print("Registered JobWorkflowView.")
 
-    if GUILD_ID != 0:
+    # Multi-guild: sync app commands into every connected guild for immediate availability.
+    guild_ids = [int(g.id) for g in bot.guilds]
+    if guild_ids:
+        await bot.sync_commands(guild_ids=guild_ids)
+        print(f"Synced slash commands to guilds: {guild_ids}")
+    elif GUILD_ID != 0:
+        # Legacy fallback when guild cache is empty.
         await bot.sync_commands(guild_ids=[GUILD_ID])
-        print(f"Synced slash commands to guild {GUILD_ID}")
+        print(f"Synced slash commands to fallback guild {GUILD_ID}")
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    try:
+        await bot.sync_commands(guild_ids=[int(guild.id)])
+        print(f"Synced slash commands on guild join: {guild.id}")
+    except Exception as e:
+        print(f"Failed to sync commands on guild join {guild.id}: {e}")
 
 
 # Register cogs
