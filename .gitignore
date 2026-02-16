@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# SQLite
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+POLICY.local.md
