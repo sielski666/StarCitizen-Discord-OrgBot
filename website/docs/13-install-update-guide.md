@@ -127,3 +127,11 @@ sudo systemctl status starcitizen-orgbot --no-pager
 And in Discord:
 - run `/setup status`
 - run one test job flow
+
+## Multi-org beta branch smoke checklist
+If you are testing the multi-org branch, run this in each server:
+1. `/setup start`
+2. `/setup status` (verify guild live/config values)
+3. Post one normal job and complete/confirm it
+4. Post one event job, RSVP, lock attendance, confirm payout
+5. Run `/finance reconcile`

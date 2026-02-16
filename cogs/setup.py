@@ -357,6 +357,7 @@ class SetupCog(commands.Cog):
 
         guild = ctx.guild
         env = await self._get_effective_config(guild.id if guild else None)
+        guild_id_live = str(guild.id) if guild else "unknown"
         required = [
             "DISCORD_TOKEN",
             "GUILD_ID",
@@ -373,7 +374,8 @@ class SetupCog(commands.Cog):
         token_set = "set" if env.get("DISCORD_TOKEN") else "missing"
         text = (
             f"Token: **{token_set}**\n"
-            f"Guild: `{env.get('GUILD_ID', 'missing')}`\n"
+            f"Guild (live): `{guild_id_live}`\n"
+            f"Guild (config): `{env.get('GUILD_ID', 'missing')}`\n"
             f"Finance Role: `{env.get('FINANCE_ROLE_ID', 'missing')}`\n"
             f"Jobs Admin Role: `{env.get('JOBS_ADMIN_ROLE_ID', 'missing')}`\n"
             f"Event Handler Role: `{env.get('EVENT_HANDLER_ROLE_ID', 'missing')}`\n"
@@ -386,6 +388,10 @@ class SetupCog(commands.Cog):
             text += "\n⚠️ Missing: " + ", ".join(missing)
         else:
             text += "\n✅ Core setup fields present"
+
+        configured_gid = env.get("GUILD_ID", "")
+        if guild and configured_gid.isdigit() and int(configured_gid) != int(guild.id):
+            text += "\n⚠️ Config guild differs from current guild. Run `/setup start` in this server to sync guild-scoped settings."
 
         await ctx.respond(text, ephemeral=True)
 
