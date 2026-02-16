@@ -613,6 +613,7 @@ class AccountCog(commands.Cog):
             dry_run=bool(dry_run),
             force_clear_active=bool(force_clear_active),
             handled_by=ctx.author.id,
+            guild_id=(ctx.guild.id if ctx.guild else None),
         )
 
         results = data.get("users", [])

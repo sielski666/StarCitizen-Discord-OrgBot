@@ -1484,9 +1484,10 @@ class Database:
         dry_run: bool = True,
         force_clear_active: bool = False,
         handled_by: int | None = None,
+        guild_id: int | None = None,
     ):
         """
-        Rebuild shares_escrow.locked_shares from active cashout requests.
+        Rebuild escrow locks from active cashout requests.
 
         Active requests: pending, approved.
         If force_clear_active=True, active requests in scope are marked rejected and expected locks become 0.
@@ -1495,10 +1496,15 @@ class Database:
             raise RuntimeError("Database not connected")
 
         params: list = []
-        scope_where = ""
+        scope_where = []
+        if guild_id is not None:
+            scope_where.append("guild_id=?")
+            params.append(int(guild_id))
         if discord_id is not None:
-            scope_where = "WHERE requester_id=?"
+            scope_where.append("requester_id=?")
             params.append(int(discord_id))
+
+        where_sql = ("WHERE " + " AND ".join(scope_where)) if scope_where else ""
 
         requests_rejected: list[int] = []
 
@@ -1507,7 +1513,7 @@ class Database:
             cur = await self.conn.execute(
                 f"""
                 SELECT request_id FROM cashout_requests
-                {scope_where} { 'AND' if scope_where else 'WHERE' } status IN ('pending','approved')
+                {where_sql} { 'AND' if where_sql else 'WHERE' } status IN ('pending','approved')
                 """,
                 tuple(params),
             )
@@ -1533,34 +1539,71 @@ class Database:
         if discord_id is not None:
             users.add(int(discord_id))
         else:
-            for table, col in (("shareholdings", "discord_id"), ("shares_escrow", "discord_id"), ("cashout_requests", "requester_id")):
-                cur = await self.conn.execute(f"SELECT DISTINCT {col} FROM {table}")
+            if guild_id is None:
+                for table, col in (("shareholdings", "discord_id"), ("shares_escrow", "discord_id"), ("cashout_requests", "requester_id")):
+                    cur = await self.conn.execute(f"SELECT DISTINCT {col} FROM {table}")
+                    rows = await cur.fetchall()
+                    users.update(int(r[0]) for r in rows if r and r[0] is not None)
+            else:
+                for table, col in (("shareholdings_by_guild", "discord_id"), ("shares_escrow_by_guild", "discord_id")):
+                    cur = await self.conn.execute(f"SELECT DISTINCT {col} FROM {table} WHERE guild_id=?", (int(guild_id),))
+                    rows = await cur.fetchall()
+                    users.update(int(r[0]) for r in rows if r and r[0] is not None)
+                cur = await self.conn.execute(
+                    "SELECT DISTINCT requester_id FROM cashout_requests WHERE guild_id=?",
+                    (int(guild_id),),
+                )
                 rows = await cur.fetchall()
                 users.update(int(r[0]) for r in rows if r and r[0] is not None)
 
         results = []
         for uid in sorted(users):
-            await self.ensure_member(uid)
+            await self.ensure_member(uid, guild_id=guild_id)
 
-            cur_hold = await self.conn.execute("SELECT shares FROM shareholdings WHERE discord_id=?", (uid,))
-            row_hold = await cur_hold.fetchone()
-            total_shares = int(row_hold[0]) if row_hold else 0
+            if guild_id is None:
+                cur_hold = await self.conn.execute("SELECT shares FROM shareholdings WHERE discord_id=?", (uid,))
+                row_hold = await cur_hold.fetchone()
+                total_shares = int(row_hold[0]) if row_hold else 0
 
-            cur_lock = await self.conn.execute("SELECT locked_shares FROM shares_escrow WHERE discord_id=?", (uid,))
-            row_lock = await cur_lock.fetchone()
-            locked_before = int(row_lock[0]) if row_lock else 0
+                cur_lock = await self.conn.execute("SELECT locked_shares FROM shares_escrow WHERE discord_id=?", (uid,))
+                row_lock = await cur_lock.fetchone()
+                locked_before = int(row_lock[0]) if row_lock else 0
+            else:
+                cur_hold = await self.conn.execute(
+                    "SELECT shares FROM shareholdings_by_guild WHERE guild_id=? AND discord_id=?",
+                    (int(guild_id), int(uid)),
+                )
+                row_hold = await cur_hold.fetchone()
+                total_shares = int(row_hold[0]) if row_hold else 0
+
+                cur_lock = await self.conn.execute(
+                    "SELECT locked_shares FROM shares_escrow_by_guild WHERE guild_id=? AND discord_id=?",
+                    (int(guild_id), int(uid)),
+                )
+                row_lock = await cur_lock.fetchone()
+                locked_before = int(row_lock[0]) if row_lock else 0
 
             if force_clear_active:
                 expected_locked = 0
             else:
-                cur_exp = await self.conn.execute(
-                    """
-                    SELECT COALESCE(SUM(shares),0)
-                    FROM cashout_requests
-                    WHERE requester_id=? AND status IN ('pending','approved')
-                    """,
-                    (uid,),
-                )
+                if guild_id is None:
+                    cur_exp = await self.conn.execute(
+                        """
+                        SELECT COALESCE(SUM(shares),0)
+                        FROM cashout_requests
+                        WHERE requester_id=? AND status IN ('pending','approved')
+                        """,
+                        (uid,),
+                    )
+                else:
+                    cur_exp = await self.conn.execute(
+                        """
+                        SELECT COALESCE(SUM(shares),0)
+                        FROM cashout_requests
+                        WHERE guild_id=? AND requester_id=? AND status IN ('pending','approved')
+                        """,
+                        (int(guild_id), int(uid)),
+                    )
                 row_exp = await cur_exp.fetchone()
                 expected_locked = int(row_exp[0]) if row_exp else 0
 
@@ -1568,10 +1611,16 @@ class Database:
             changed = int(locked_before) != int(locked_after)
 
             if changed and not dry_run:
-                await self.conn.execute(
-                    "UPDATE shares_escrow SET locked_shares=? WHERE discord_id=?",
-                    (int(locked_after), int(uid)),
-                )
+                if guild_id is None:
+                    await self.conn.execute(
+                        "UPDATE shares_escrow SET locked_shares=? WHERE discord_id=?",
+                        (int(locked_after), int(uid)),
+                    )
+                else:
+                    await self.conn.execute(
+                        "UPDATE shares_escrow_by_guild SET locked_shares=? WHERE guild_id=? AND discord_id=?",
+                        (int(locked_after), int(guild_id), int(uid)),
+                    )
 
             results.append(
                 {
