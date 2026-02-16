@@ -126,7 +126,11 @@ class FinanceCog(commands.Cog):
     async def recent_payouts(self, ctx: discord.ApplicationContext, limit: int = 10):
         await ctx.defer(ephemeral=True)
 
-        rows = await self.db.list_transactions(types=["payout", "rep"], limit=int(limit))
+        rows = await self.db.list_transactions(
+            types=["payout", "rep"],
+            limit=int(limit),
+            guild_id=(ctx.guild.id if ctx.guild else None),
+        )
 
         embed = discord.Embed(
             title="🧾 Recent Payout Activity",
@@ -210,7 +214,12 @@ class FinanceCog(commands.Cog):
     async def user_audit(self, ctx: discord.ApplicationContext, member: discord.Member, limit: int = 15):
         await ctx.defer(ephemeral=True)
 
-        rows = await self.db.list_transactions(types=None, limit=int(limit), discord_id=int(member.id))
+        rows = await self.db.list_transactions(
+            types=None,
+            limit=int(limit),
+            discord_id=int(member.id),
+            guild_id=(ctx.guild.id if ctx.guild else None),
+        )
 
         embed = discord.Embed(
             title="🧾 User Audit",

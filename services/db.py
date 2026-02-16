@@ -1435,12 +1435,24 @@ class Database:
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    async def list_transactions(self, types: list[str] | None = None, limit: int = 25, discord_id: int | None = None):
+    async def list_transactions(
+        self,
+        types: list[str] | None = None,
+        limit: int = 25,
+        discord_id: int | None = None,
+        guild_id: int | None = None,
+    ):
         """
         Returns rows of transactions newest first.
         """
         where = []
         params: list = []
+
+        if guild_id is None:
+            where.append("guild_id=0")
+        else:
+            where.append("guild_id=?")
+            params.append(int(guild_id))
 
         if discord_id is not None:
             where.append("discord_id=?")
