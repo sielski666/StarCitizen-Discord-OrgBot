@@ -1,4 +1,4 @@
-# 11 - Troubleshooting
+# 10 - Troubleshooting
 
 
 ## Commands missing in Discord

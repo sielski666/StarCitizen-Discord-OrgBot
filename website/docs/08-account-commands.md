@@ -1,4 +1,4 @@
-# 09 - Account Commands
+# 08 - Account Commands
 
 ## `/account overview`
 Shows:

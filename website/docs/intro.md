@@ -1,4 +1,4 @@
-# 02 - Startup Information
+# 01 - Startup Information
 
 ## Links
 - Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/

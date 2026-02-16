@@ -1,4 +1,4 @@
-# 03 - Setup Commands
+# 02 - Setup Commands
 
 Run setup commands after quick start and before production use.
 
