@@ -128,8 +128,8 @@ And in Discord:
 - run `/setup status`
 - run one test job flow
 
-## Multi-org beta branch smoke checklist
-If you are testing the multi-org branch, run this in each server:
+## Multi-org smoke checklist
+If you run the bot in multiple Discord servers, run this in each server:
 1. `/setup start`
 2. `/setup status` (verify guild live/config values)
 3. Post one normal job and complete/confirm it
