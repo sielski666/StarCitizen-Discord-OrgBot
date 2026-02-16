@@ -4,6 +4,8 @@
 const sidebars = {
   tutorialSidebar: [
     'install-update-guide',
+    'multi-server-operations',
+    'topgg-listing-kit',
     'intro',
     'setup-commands',
     'command-index',
