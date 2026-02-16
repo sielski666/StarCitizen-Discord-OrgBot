@@ -190,6 +190,7 @@ class Database:
         await self._ensure_jobs_columns()
         await self._ensure_ledger_columns()
         await self._ensure_transactions_columns()
+        await self._backfill_legacy_account_data()
         await self.conn.commit()
 
     async def _ensure_jobs_columns(self):
@@ -233,6 +234,54 @@ class Database:
         existing = {str(r[1]) for r in rows}
         if "guild_id" not in existing:
             await self.conn.execute("ALTER TABLE transactions ADD COLUMN guild_id INTEGER NOT NULL DEFAULT 0")
+
+    async def _backfill_legacy_account_data(self):
+        try:
+            legacy_gid = int(os.getenv("GUILD_ID", "0") or "0")
+        except Exception:
+            legacy_gid = 0
+        if legacy_gid <= 0:
+            return
+
+        # One-time migration for single-guild deployments upgrading to guild-scoped tables.
+        await self.conn.execute(
+            """
+            INSERT OR IGNORE INTO wallets_by_guild(guild_id, discord_id, balance)
+            SELECT ?, discord_id, balance FROM wallets
+            """,
+            (int(legacy_gid),),
+        )
+        await self.conn.execute(
+            """
+            INSERT OR IGNORE INTO shareholdings_by_guild(guild_id, discord_id, shares)
+            SELECT ?, discord_id, shares FROM shareholdings
+            """,
+            (int(legacy_gid),),
+        )
+        await self.conn.execute(
+            """
+            INSERT OR IGNORE INTO shares_escrow_by_guild(guild_id, discord_id, locked_shares)
+            SELECT ?, discord_id, locked_shares FROM shares_escrow
+            """,
+            (int(legacy_gid),),
+        )
+        await self.conn.execute(
+            """
+            INSERT OR IGNORE INTO reputation_by_guild(guild_id, discord_id, rep)
+            SELECT ?, discord_id, rep FROM reputation
+            """,
+            (int(legacy_gid),),
+        )
+
+        # Preserve historical audit scoping for upgraded single-guild installs.
+        await self.conn.execute(
+            "UPDATE transactions SET guild_id=? WHERE guild_id=0",
+            (int(legacy_gid),),
+        )
+        await self.conn.execute(
+            "UPDATE ledger_entries SET guild_id=? WHERE guild_id=0",
+            (int(legacy_gid),),
+        )
 
     async def close(self):
         if self.conn:
