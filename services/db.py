@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS treasury (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS treasury_by_guild (
+  guild_id INTEGER PRIMARY KEY,
+  amount INTEGER NOT NULL DEFAULT 0,
+  updated_by INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Jobs table
 CREATE TABLE IF NOT EXISTS jobs (
   job_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,7 +109,8 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   to_account TEXT,
   reference_type TEXT,
   reference_id TEXT,
-  notes TEXT
+  notes TEXT,
+  guild_id INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS job_templates (
@@ -151,6 +159,7 @@ class Database:
         await self.conn.executescript(SCHEMA)
         await self.conn.execute("INSERT OR IGNORE INTO treasury(id, amount) VALUES(1, 0)")
         await self._ensure_jobs_columns()
+        await self._ensure_ledger_columns()
         await self.conn.commit()
 
     async def _ensure_jobs_columns(self):
@@ -180,6 +189,13 @@ class Database:
                 legacy_gid = 0
             if legacy_gid > 0:
                 await self.conn.execute("UPDATE jobs SET guild_id=? WHERE guild_id=0", (int(legacy_gid),))
+
+    async def _ensure_ledger_columns(self):
+        cur = await self.conn.execute("PRAGMA table_info(ledger_entries)")
+        rows = await cur.fetchall()
+        existing = {str(r[1]) for r in rows}
+        if "guild_id" not in existing:
+            await self.conn.execute("ALTER TABLE ledger_entries ADD COLUMN guild_id INTEGER NOT NULL DEFAULT 0")
 
     async def close(self):
         if self.conn:
@@ -246,11 +262,12 @@ class Database:
         reference_type: str | None = None,
         reference_id: str | None = None,
         notes: str | None = None,
+        guild_id: int | None = None,
     ):
         await self.conn.execute(
             """
-            INSERT INTO ledger_entries(entry_type, amount, from_account, to_account, reference_type, reference_id, notes)
-            VALUES(?,?,?,?,?,?,?)
+            INSERT INTO ledger_entries(entry_type, amount, from_account, to_account, reference_type, reference_id, notes, guild_id)
+            VALUES(?,?,?,?,?,?,?,?)
             """,
             (
                 str(entry_type),
@@ -260,21 +277,24 @@ class Database:
                 str(reference_type) if reference_type is not None else None,
                 str(reference_id) if reference_id is not None else None,
                 str(notes) if notes is not None else None,
+                int(guild_id) if guild_id is not None else 0,
             ),
         )
 
-    async def get_ledger_reconcile(self):
+    async def get_ledger_reconcile(self, guild_id: int | None = None):
         """Return (current_treasury, ledger_treasury, drift, baseline_at)."""
-        current = await self.get_treasury()
+        gid = int(guild_id) if guild_id is not None else 0
+        current = await self.get_treasury(guild_id=guild_id)
 
         cur = await self.conn.execute(
             """
             SELECT timestamp, amount
             FROM ledger_entries
-            WHERE entry_type='treasury_set'
+            WHERE entry_type='treasury_set' AND guild_id=?
             ORDER BY entry_id DESC
             LIMIT 1
-            """
+            """,
+            (gid,),
         )
         baseline = await cur.fetchone()
 
@@ -291,9 +311,9 @@ class Database:
                     END
                 ), 0)
                 FROM ledger_entries
-                WHERE timestamp > ? AND entry_type != 'treasury_set'
+                WHERE timestamp > ? AND entry_type != 'treasury_set' AND guild_id=?
                 """,
-                (baseline_at,),
+                (baseline_at, gid),
             )
             delta = await dcur.fetchone()
             ledger_treasury += int(delta[0]) if delta and delta[0] is not None else 0
@@ -309,8 +329,9 @@ class Database:
                     END
                 ), 0)
                 FROM ledger_entries
-                WHERE entry_type != 'treasury_set'
-                """
+                WHERE entry_type != 'treasury_set' AND guild_id=?
+                """,
+                (gid,),
             )
             delta = await dcur.fetchone()
             ledger_treasury = int(delta[0]) if delta and delta[0] is not None else 0
@@ -453,13 +474,34 @@ class Database:
     # =========================
     # TREASURY
     # =========================
-    async def get_treasury(self) -> int:
-        cur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
+    async def get_treasury(self, guild_id: int | None = None) -> int:
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
+            row = await cur.fetchone()
+            return int(row[0]) if row else 0
+
+        await self.conn.execute(
+            "INSERT OR IGNORE INTO treasury_by_guild(guild_id, amount) VALUES(?, 0)",
+            (int(guild_id),),
+        )
+        await self.conn.commit()
+        cur = await self.conn.execute("SELECT amount FROM treasury_by_guild WHERE guild_id=?", (int(guild_id),))
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    async def get_treasury_meta(self):
-        cur = await self.conn.execute("SELECT amount, updated_by, updated_at FROM treasury WHERE id=1")
+    async def get_treasury_meta(self, guild_id: int | None = None):
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT amount, updated_by, updated_at FROM treasury WHERE id=1")
+        else:
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO treasury_by_guild(guild_id, amount) VALUES(?, 0)",
+                (int(guild_id),),
+            )
+            await self.conn.commit()
+            cur = await self.conn.execute(
+                "SELECT amount, updated_by, updated_at FROM treasury_by_guild WHERE guild_id=?",
+                (int(guild_id),),
+            )
         row = await cur.fetchone()
         if not row:
             return 0, None, None
@@ -468,14 +510,25 @@ class Database:
         updated_at = str(row[2]) if row[2] is not None else None
         return amount, updated_by, updated_at
 
-    async def set_treasury(self, amount: int, updated_by: int | None = None):
-        current = await self.get_treasury()
+    async def set_treasury(self, amount: int, updated_by: int | None = None, guild_id: int | None = None):
+        current = await self.get_treasury(guild_id=guild_id)
         await self._begin()
         try:
-            await self.conn.execute(
-                "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
-                (int(amount), int(updated_by) if updated_by is not None else None),
-            )
+            if guild_id is None:
+                await self.conn.execute(
+                    "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                    (int(amount), int(updated_by) if updated_by is not None else None),
+                )
+            else:
+                await self.conn.execute(
+                    "INSERT OR IGNORE INTO treasury_by_guild(guild_id, amount) VALUES(?, 0)",
+                    (int(guild_id),),
+                )
+                await self.conn.execute(
+                    "UPDATE treasury_by_guild SET amount=?, updated_by=?, updated_at=datetime('now') WHERE guild_id=?",
+                    (int(amount), int(updated_by) if updated_by is not None else None, int(guild_id)),
+                )
+
             await self.add_ledger_entry(
                 entry_type="treasury_set",
                 amount=int(amount),
@@ -484,6 +537,7 @@ class Database:
                 reference_type="treasury",
                 reference_id="manual-set",
                 notes=f"Manual set from {int(current)} to {int(amount)}",
+                guild_id=guild_id,
             )
             await self._commit()
         except Exception:
@@ -521,10 +575,16 @@ class Database:
     # =========================
     # JOBS
     # =========================
-    async def get_reserved_job_escrow(self) -> int:
-        cur = await self.conn.execute(
-            "SELECT COALESCE(SUM(escrow_amount), 0) FROM jobs WHERE escrow_status='reserved'"
-        )
+    async def get_reserved_job_escrow(self, guild_id: int | None = None) -> int:
+        if guild_id is None:
+            cur = await self.conn.execute(
+                "SELECT COALESCE(SUM(escrow_amount), 0) FROM jobs WHERE escrow_status='reserved'"
+            )
+        else:
+            cur = await self.conn.execute(
+                "SELECT COALESCE(SUM(escrow_amount), 0) FROM jobs WHERE escrow_status='reserved' AND guild_id=?",
+                (int(guild_id),),
+            )
         row = await cur.fetchone()
         return int(row[0]) if row and row[0] is not None else 0
 
@@ -544,8 +604,8 @@ class Database:
 
         await self._begin()
         try:
-            current_treasury = await self.get_treasury()
-            reserved = await self.get_reserved_job_escrow()
+            current_treasury = await self.get_treasury(guild_id=guild_id)
+            reserved = await self.get_reserved_job_escrow(guild_id=guild_id)
             available = int(current_treasury) - int(reserved)
             if available < reward_i:
                 raise ValueError(
@@ -1168,7 +1228,7 @@ class Database:
     # =========================
     # FINANCE DASHBOARD HELPERS
     # =========================
-    async def list_cashout_requests(self, statuses: list[str], limit: int = 25):
+    async def list_cashout_requests(self, statuses: list[str], limit: int = 25, guild_id: int | None = None):
         """
         Returns rows of cashout_requests, newest first.
         Row shape matches get_cashout_request plus created/updated fields etc.
@@ -1178,28 +1238,47 @@ class Database:
             statuses = ["pending"]
 
         q_marks = ",".join(["?"] * len(statuses))
-        cur = await self.conn.execute(
-            f"""
-            SELECT request_id, guild_id, channel_id, message_id, requester_id, shares, status,
-                   created_at, updated_at, thread_id, handled_by, handled_note
-            FROM cashout_requests
-            WHERE status IN ({q_marks})
-            ORDER BY datetime(created_at) DESC, request_id DESC
-            LIMIT ?
-            """,
-            (*statuses, int(limit)),
-        )
+        if guild_id is None:
+            cur = await self.conn.execute(
+                f"""
+                SELECT request_id, guild_id, channel_id, message_id, requester_id, shares, status,
+                       created_at, updated_at, thread_id, handled_by, handled_note
+                FROM cashout_requests
+                WHERE status IN ({q_marks})
+                ORDER BY datetime(created_at) DESC, request_id DESC
+                LIMIT ?
+                """,
+                (*statuses, int(limit)),
+            )
+        else:
+            cur = await self.conn.execute(
+                f"""
+                SELECT request_id, guild_id, channel_id, message_id, requester_id, shares, status,
+                       created_at, updated_at, thread_id, handled_by, handled_note
+                FROM cashout_requests
+                WHERE status IN ({q_marks}) AND guild_id=?
+                ORDER BY datetime(created_at) DESC, request_id DESC
+                LIMIT ?
+                """,
+                (*statuses, int(guild_id), int(limit)),
+            )
         return await cur.fetchall()
 
-    async def count_cashout_requests(self, statuses: list[str]) -> int:
+    async def count_cashout_requests(self, statuses: list[str], guild_id: int | None = None) -> int:
         statuses = [str(s) for s in (statuses or []) if str(s).strip()]
         if not statuses:
             statuses = ["pending"]
         q_marks = ",".join(["?"] * len(statuses))
-        cur = await self.conn.execute(
-            f"SELECT COUNT(*) FROM cashout_requests WHERE status IN ({q_marks})",
-            (*statuses,),
-        )
+        if guild_id is None:
+            cur = await self.conn.execute(
+                f"SELECT COUNT(*) FROM cashout_requests WHERE status IN ({q_marks})",
+                (*statuses,),
+            )
+        else:
+            cur = await self.conn.execute(
+                f"SELECT COUNT(*) FROM cashout_requests WHERE status IN ({q_marks}) AND guild_id=?",
+                (*statuses, int(guild_id)),
+            )
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 

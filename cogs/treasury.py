@@ -24,7 +24,9 @@ class TreasuryCog(commands.Cog):
 
     @treasury.command(name="status", description="View the current treasury amount")
     async def status(self, ctx: discord.ApplicationContext):
-        amount, updated_by, updated_at = await self.db.get_treasury_meta()
+        amount, updated_by, updated_at = await self.db.get_treasury_meta(
+            guild_id=(ctx.guild.id if ctx.guild else None)
+        )
 
         embed = discord.Embed(
             title="🏦 TREASURY STATUS",
@@ -56,7 +58,11 @@ class TreasuryCog(commands.Cog):
         if amount < 0:
             return await ctx.respond("Treasury amount cannot be negative.", ephemeral=True)
 
-        await self.db.set_treasury(int(amount), updated_by=ctx.author.id)
+        await self.db.set_treasury(
+            int(amount),
+            updated_by=ctx.author.id,
+            guild_id=(ctx.guild.id if ctx.guild else None),
+        )
 
         embed = discord.Embed(
             title="✅ TREASURY UPDATED",

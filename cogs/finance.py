@@ -85,7 +85,11 @@ class FinanceCog(commands.Cog):
         if not st:
             st = ["pending", "approved"]
 
-        rows = await self.db.list_cashout_requests(statuses=st, limit=int(limit))
+        rows = await self.db.list_cashout_requests(
+            statuses=st,
+            limit=int(limit),
+            guild_id=(ctx.guild.id if ctx.guild else None),
+        )
 
         embed = discord.Embed(
             title="🏦 Pending Cash-out Requests",
@@ -240,11 +244,12 @@ class FinanceCog(commands.Cog):
     async def cashout_stats(self, ctx: discord.ApplicationContext):
         await ctx.defer(ephemeral=True)
 
-        pending = await self.db.count_cashout_requests(["pending"])
-        approved = await self.db.count_cashout_requests(["approved"])
-        paid = await self.db.count_cashout_requests(["paid"])
-        rejected = await self.db.count_cashout_requests(["rejected"])
-        treasury = await self.db.get_treasury()
+        gid = ctx.guild.id if ctx.guild else None
+        pending = await self.db.count_cashout_requests(["pending"], guild_id=gid)
+        approved = await self.db.count_cashout_requests(["approved"], guild_id=gid)
+        paid = await self.db.count_cashout_requests(["paid"], guild_id=gid)
+        rejected = await self.db.count_cashout_requests(["rejected"], guild_id=gid)
+        treasury = await self.db.get_treasury(guild_id=gid)
 
         embed = discord.Embed(
             title="📊 Cash-out Stats",
@@ -264,7 +269,9 @@ class FinanceCog(commands.Cog):
     async def reconcile(self, ctx: discord.ApplicationContext):
         await ctx.defer(ephemeral=True)
 
-        current, ledger_value, drift, baseline_at = await self.db.get_ledger_reconcile()
+        current, ledger_value, drift, baseline_at = await self.db.get_ledger_reconcile(
+            guild_id=(ctx.guild.id if ctx.guild else None)
+        )
 
         embed = discord.Embed(
             title="🧮 Treasury Reconcile",
