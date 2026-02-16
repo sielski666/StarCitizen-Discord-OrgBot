@@ -117,7 +117,7 @@ class CashoutPersistentView(discord.ui.View):
         if not request_id:
             return await interaction.followup.send("Could not read request ID from message.", ephemeral=True)
 
-        row = await self.db.get_cashout_request(request_id)
+        row = await self.db.get_cashout_request(request_id, guild_id=(interaction.guild.id if interaction.guild else None))
         if not row:
             return await interaction.followup.send("Request not found in database.", ephemeral=True)
 
@@ -134,6 +134,7 @@ class CashoutPersistentView(discord.ui.View):
             status="approved",
             handled_by=interaction.user.id,
             note=f"Approved by {interaction.user.id}",
+            guild_id=(interaction.guild.id if interaction.guild else None),
         )
 
         new_embed = AccountCog._static_cashout_embed(rid, requester_id, shares, "approved")
@@ -166,7 +167,7 @@ class CashoutPersistentView(discord.ui.View):
         if not request_id:
             return await interaction.followup.send("Could not read request ID from message.", ephemeral=True)
 
-        row = await self.db.get_cashout_request(request_id)
+        row = await self.db.get_cashout_request(request_id, guild_id=(interaction.guild.id if interaction.guild else None))
         if not row:
             return await interaction.followup.send("Request not found in database.", ephemeral=True)
 
@@ -189,6 +190,7 @@ class CashoutPersistentView(discord.ui.View):
             status="rejected",
             handled_by=interaction.user.id,
             note=f"Rejected by {interaction.user.id}",
+            guild_id=(interaction.guild.id if interaction.guild else None),
         )
 
         new_embed = AccountCog._static_cashout_embed(rid, requester_id, shares, "rejected")
@@ -219,7 +221,7 @@ class CashoutPersistentView(discord.ui.View):
         if not request_id:
             return await interaction.followup.send("Could not read request ID from message.", ephemeral=True)
 
-        row = await self.db.get_cashout_request(request_id)
+        row = await self.db.get_cashout_request(request_id, guild_id=(interaction.guild.id if interaction.guild else None))
         if not row:
             return await interaction.followup.send("Request not found in database.", ephemeral=True)
 
@@ -239,17 +241,18 @@ class CashoutPersistentView(discord.ui.View):
                 payout_amount=payout_amount,
                 handled_by=interaction.user.id,
                 note=f"Marked paid ({payout_amount:,} aUEC) and removed shares",
+                guild_id=(interaction.guild.id if interaction.guild else None),
             )
         except ValueError as e:
             if "Treasury too low" in str(e):
-                current_treasury = await self.db.get_treasury()
+                current_treasury = await self.db.get_treasury(guild_id=(interaction.guild.id if interaction.guild else None))
                 return await interaction.followup.send(
                     f"Cannot mark paid: {e}\nCurrent treasury: `{current_treasury:,} aUEC`\nRequired: `{payout_amount:,} aUEC`",
                     ephemeral=True,
                 )
             return await interaction.followup.send(f"Cannot mark paid: {e}", ephemeral=True)
 
-        treasury_left = await self.db.get_treasury()
+        treasury_left = await self.db.get_treasury(guild_id=(interaction.guild.id if interaction.guild else None))
 
         new_embed = AccountCog._static_cashout_embed(rid, requester_id, shares, "paid")
         files = _logo_files()
@@ -744,7 +747,7 @@ class AccountCog(commands.Cog):
             name=f"Cash-out #{request_id} — {ctx.author.display_name}",
             auto_archive_duration=1440,
         )
-        await self.db.set_cashout_thread(request_id, thread.id)
+        await self.db.set_cashout_thread(request_id, thread.id, guild_id=(ctx.guild.id if ctx.guild else None))
 
         embed = self._static_cashout_embed(request_id, ctx.author.id, int(shares), "pending")
 
@@ -763,7 +766,7 @@ class AccountCog(commands.Cog):
         )
 
         payout_amount = int(shares) * int(SHARE_CASHOUT_AUEC_PER_SHARE)
-        treasury_amount = await self.db.get_treasury()
+        treasury_amount = await self.db.get_treasury(guild_id=(ctx.guild.id if ctx.guild else None))
         warn = ""
         if treasury_amount < payout_amount:
             warn = f"\n\n⚠️ Treasury currently: `{treasury_amount:,} aUEC` (below estimated payout `{payout_amount:,} aUEC`)."

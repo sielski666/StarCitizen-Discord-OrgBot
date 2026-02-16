@@ -173,7 +173,7 @@ class FinanceCog(commands.Cog):
     async def cashout_lookup(self, ctx: discord.ApplicationContext, request_id: int):
         await ctx.defer(ephemeral=True)
 
-        row = await self.db.get_cashout_request(int(request_id))
+        row = await self.db.get_cashout_request(int(request_id), guild_id=(ctx.guild.id if ctx.guild else None))
         if not row:
             return await ctx.followup.send("Request not found.", ephemeral=True)
 

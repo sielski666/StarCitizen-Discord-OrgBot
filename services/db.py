@@ -1074,15 +1074,22 @@ class Database:
         payout_amount: int,
         handled_by: int | None = None,
         note: str | None = None,
+        guild_id: int | None = None,
     ):
-        cur = await self.conn.execute(
-            "SELECT requester_id, shares, status FROM cashout_requests WHERE request_id=?",
-            (int(request_id),),
-        )
+        if guild_id is None:
+            cur = await self.conn.execute(
+                "SELECT requester_id, shares, status, guild_id FROM cashout_requests WHERE request_id=?",
+                (int(request_id),),
+            )
+        else:
+            cur = await self.conn.execute(
+                "SELECT requester_id, shares, status, guild_id FROM cashout_requests WHERE request_id=? AND guild_id=?",
+                (int(request_id), int(guild_id)),
+            )
         row = await cur.fetchone()
         if not row:
             raise ValueError("Cash-out request not found.")
-        requester_id, shares, status = int(row[0]), int(row[1]), str(row[2])
+        requester_id, shares, status, request_guild_id = int(row[0]), int(row[1]), str(row[2]), int(row[3])
 
         if status != "approved":
             raise ValueError(f"Request must be approved first (status: {status}).")
@@ -1106,9 +1113,7 @@ class Database:
             raise ValueError("Member does not have enough shares to sell.")
 
         if TREASURY_AUTODEDUCT and STRICT_TREASURY:
-            tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
-            trow = await tcur.fetchone()
-            treasury_amount = int(trow[0]) if trow else 0
+            treasury_amount = await self.get_treasury(guild_id=request_guild_id)
             if treasury_amount < int(payout_amount):
                 raise ValueError("Treasury too low for this payout.")
 
@@ -1116,8 +1121,12 @@ class Database:
         try:
             if TREASURY_AUTODEDUCT:
                 await self.conn.execute(
-                    "UPDATE treasury SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE id=1",
-                    (int(payout_amount), int(handled_by) if handled_by is not None else None),
+                    "INSERT OR IGNORE INTO treasury_by_guild(guild_id, amount) VALUES(?, 0)",
+                    (int(request_guild_id),),
+                )
+                await self.conn.execute(
+                    "UPDATE treasury_by_guild SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE guild_id=?",
+                    (int(payout_amount), int(handled_by) if handled_by is not None else None, int(request_guild_id)),
                 )
 
             await self.conn.execute(
@@ -1132,6 +1141,7 @@ class Database:
                 reference_type="cashout",
                 reference_id=str(int(request_id)),
                 notes="Escrow released on paid cashout",
+                guild_id=request_guild_id,
             )
             await self.conn.execute(
                 "UPDATE shareholdings SET shares = shares - ? WHERE discord_id=?",
@@ -1150,6 +1160,7 @@ class Database:
                 reference_type="cashout",
                 reference_id=str(int(request_id)),
                 notes=f"Sold {int(shares)} shares via cashout",
+                guild_id=request_guild_id,
             )
 
             await self.add_ledger_entry(
@@ -1160,6 +1171,7 @@ class Database:
                 reference_type="cashout",
                 reference_id=str(int(request_id)),
                 notes="Cashout finalized as paid",
+                guild_id=request_guild_id,
             )
 
             await self._commit()
@@ -1176,31 +1188,49 @@ class Database:
         await self.conn.commit()
         return int(cur.lastrowid)
 
-    async def set_cashout_thread(self, request_id: int, thread_id: int):
-        await self.conn.execute(
-            "UPDATE cashout_requests SET thread_id=?, updated_at=datetime('now') WHERE request_id=?",
-            (int(thread_id), int(request_id)),
-        )
+    async def set_cashout_thread(self, request_id: int, thread_id: int, guild_id: int | None = None):
+        if guild_id is None:
+            await self.conn.execute(
+                "UPDATE cashout_requests SET thread_id=?, updated_at=datetime('now') WHERE request_id=?",
+                (int(thread_id), int(request_id)),
+            )
+        else:
+            await self.conn.execute(
+                "UPDATE cashout_requests SET thread_id=?, updated_at=datetime('now') WHERE request_id=? AND guild_id=?",
+                (int(thread_id), int(request_id), int(guild_id)),
+            )
         await self.conn.commit()
 
-    async def set_cashout_status(self, request_id: int, status: str, handled_by: int | None = None, note: str | None = None):
+    async def set_cashout_status(self, request_id: int, status: str, handled_by: int | None = None, note: str | None = None, guild_id: int | None = None):
         status_str = str(status)
 
         await self._begin()
         try:
-            await self.conn.execute(
-                "UPDATE cashout_requests SET status=?, handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
-                (status_str, int(handled_by) if handled_by is not None else None, note, int(request_id)),
-            )
+            if guild_id is None:
+                await self.conn.execute(
+                    "UPDATE cashout_requests SET status=?, handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=?",
+                    (status_str, int(handled_by) if handled_by is not None else None, note, int(request_id)),
+                )
+            else:
+                await self.conn.execute(
+                    "UPDATE cashout_requests SET status=?, handled_by=?, handled_note=?, updated_at=datetime('now') WHERE request_id=? AND guild_id=?",
+                    (status_str, int(handled_by) if handled_by is not None else None, note, int(request_id), int(guild_id)),
+                )
 
             if status_str == "approved":
-                cur = await self.conn.execute(
-                    "SELECT requester_id, shares FROM cashout_requests WHERE request_id=?",
-                    (int(request_id),),
-                )
+                if guild_id is None:
+                    cur = await self.conn.execute(
+                        "SELECT requester_id, shares, guild_id FROM cashout_requests WHERE request_id=?",
+                        (int(request_id),),
+                    )
+                else:
+                    cur = await self.conn.execute(
+                        "SELECT requester_id, shares, guild_id FROM cashout_requests WHERE request_id=? AND guild_id=?",
+                        (int(request_id), int(guild_id)),
+                    )
                 row = await cur.fetchone()
                 if row:
-                    requester_id, shares = int(row[0]), int(row[1])
+                    requester_id, shares, row_gid = int(row[0]), int(row[1]), int(row[2])
                     est_amount = int(shares) * int(SHARE_CASHOUT_AUEC_PER_SHARE)
                     await self.add_ledger_entry(
                         entry_type="cashout_approved",
@@ -1210,6 +1240,7 @@ class Database:
                         reference_type="cashout",
                         reference_id=str(int(request_id)),
                         notes="Cashout approved (estimated payout)",
+                        guild_id=row_gid,
                     )
 
             await self._commit()
@@ -1217,12 +1248,19 @@ class Database:
             await self._rollback()
             raise
 
-    async def get_cashout_request(self, request_id: int):
-        cur = await self.conn.execute(
-            "SELECT request_id, guild_id, channel_id, message_id, requester_id, shares, status, created_at, updated_at, thread_id, handled_by, handled_note "
-            "FROM cashout_requests WHERE request_id=?",
-            (int(request_id),),
-        )
+    async def get_cashout_request(self, request_id: int, guild_id: int | None = None):
+        if guild_id is None:
+            cur = await self.conn.execute(
+                "SELECT request_id, guild_id, channel_id, message_id, requester_id, shares, status, created_at, updated_at, thread_id, handled_by, handled_note "
+                "FROM cashout_requests WHERE request_id=?",
+                (int(request_id),),
+            )
+        else:
+            cur = await self.conn.execute(
+                "SELECT request_id, guild_id, channel_id, message_id, requester_id, shares, status, created_at, updated_at, thread_id, handled_by, handled_note "
+                "FROM cashout_requests WHERE request_id=? AND guild_id=?",
+                (int(request_id), int(guild_id)),
+            )
         return await cur.fetchone()
 
     # =========================
