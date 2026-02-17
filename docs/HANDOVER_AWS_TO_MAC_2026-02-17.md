@@ -51,5 +51,37 @@ Purpose: quick refresher for the Mac instance about what was changed on AWS/bot 
 - Repo on AWS: `/home/ubuntu/.openclaw/workspace/StarCitizen-Discord-OrgBot`
 - Service: `starcitizen-orgbot.service`
 
+## Post-upgrade reminder (Mac): keep machine awake for always-on bot
+After macOS reinstall/migration, run this once:
+
+```bash
+mkdir -p ~/Library/LaunchAgents && cat > ~/Library/LaunchAgents/local.caffeinate.plist <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.caffeinate</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-dimsu</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+PLIST
+launchctl unload ~/Library/LaunchAgents/local.caffeinate.plist 2>/dev/null || true
+launchctl load ~/Library/LaunchAgents/local.caffeinate.plist
+launchctl list | grep local.caffeinate || true
+pgrep -fl "caffeinate -dimsu" || true
+```
+
+Disable later if needed:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/local.caffeinate.plist
+```
+
 ---
 If continuity looks odd on Mac, use this file first before re-triaging.
