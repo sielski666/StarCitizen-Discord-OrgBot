@@ -395,6 +395,100 @@ class SetupCog(commands.Cog):
 
         await ctx.respond(text, ephemeral=True)
 
+    @setup_group.command(name="doctor", description="Diagnose setup/permission issues in this server")
+    async def setup_doctor(self, ctx: discord.ApplicationContext):
+        member = ctx.author if isinstance(ctx.author, discord.Member) else None
+        if not member or not is_admin_member(member):
+            return await ctx.respond("Admin only.", ephemeral=True)
+
+        guild = ctx.guild
+        if guild is None:
+            return await ctx.respond("Guild context required.", ephemeral=True)
+
+        env = await self._get_effective_config(guild.id)
+        me = guild.me
+
+        checks_ok: list[str] = []
+        checks_warn: list[str] = []
+
+        if me is None:
+            checks_warn.append("Bot member not found in guild cache. Re-invite bot and retry.")
+        else:
+            gp = me.guild_permissions
+            must_have = {
+                "manage_channels": "Manage Channels",
+                "manage_roles": "Manage Roles",
+                "send_messages": "Send Messages",
+                "embed_links": "Embed Links",
+                "use_application_commands": "Use Application Commands",
+            }
+            missing = [label for key, label in must_have.items() if not getattr(gp, key, False)]
+            if missing:
+                checks_warn.append("Bot missing guild permissions: " + ", ".join(missing))
+            else:
+                checks_ok.append("Core bot guild permissions look good")
+
+        for role_key in ("FINANCE_ROLE_ID", "JOBS_ADMIN_ROLE_ID", "EVENT_HANDLER_ROLE_ID"):
+            rv = env.get(role_key, "")
+            if not rv or not rv.isdigit() or guild.get_role(int(rv)) is None:
+                checks_warn.append(f"{role_key} missing/invalid in this guild")
+            else:
+                checks_ok.append(f"{role_key} valid")
+
+        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID"]
+        for ck in channel_keys:
+            cv = env.get(ck, "")
+            if not cv or not cv.isdigit():
+                checks_warn.append(f"{ck} missing/invalid")
+                continue
+            ch = guild.get_channel(int(cv))
+            if ch is None:
+                checks_warn.append(f"{ck} points to missing channel id {cv}")
+                continue
+            if me is not None and isinstance(ch, discord.abc.GuildChannel):
+                perms = ch.permissions_for(me)
+                needed = []
+                if not perms.view_channel:
+                    needed.append("View Channel")
+                if not perms.send_messages:
+                    needed.append("Send Messages")
+                if not perms.embed_links:
+                    needed.append("Embed Links")
+                if needed:
+                    checks_warn.append(f"{ck} <#{ch.id}> missing bot perms: " + ", ".join(needed))
+                else:
+                    checks_ok.append(f"{ck} <#{ch.id}> permission check passed")
+
+        map_raw = env.get("JOB_CATEGORY_CHANNEL_MAP", "")
+        area_map = {}
+        if map_raw:
+            for part in map_raw.split(","):
+                part = part.strip()
+                if not part or ":" not in part:
+                    continue
+                k, v = part.split(":", 1)
+                if v.strip().isdigit():
+                    area_map[k.strip().lower()] = int(v.strip())
+
+        expected_areas = ["general", "salvage", "mining", "hauling", "event"]
+        for area in expected_areas:
+            cid = area_map.get(area)
+            if not cid or guild.get_channel(int(cid)) is None:
+                checks_warn.append(f"JOB_CATEGORY_CHANNEL_MAP missing/invalid entry for `{area}`")
+
+        text = "🩺 Setup Doctor\n"
+        if checks_ok:
+            text += "\n✅ OK:\n- " + "\n- ".join(checks_ok[:12])
+        if checks_warn:
+            text += "\n\n⚠️ Issues:\n- " + "\n- ".join(checks_warn[:12])
+            if len(checks_warn) > 12:
+                text += f"\n- … +{len(checks_warn) - 12} more"
+            text += "\n\nRecommended fix: run `/setup start` in this server, then `/setup status`."
+        else:
+            text += "\n\n🎉 No issues found. Setup looks healthy."
+
+        await ctx.respond(text, ephemeral=True)
+
     @setup_group.command(name="createchannels", description="Create missing treasury/shares + job-area channels")
     async def setup_create_channels(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
