@@ -298,14 +298,24 @@ class SetupCog(commands.Cog):
 
         treasury_id, shares_id = ensured
 
+        finance_role_id = await self._ensure_role(
+            guild,
+            env.get("FINANCE_ROLE_ID", ""),
+            "Finance",
+        )
+        jobs_admin_role_id = await self._ensure_role(
+            guild,
+            env.get("JOBS_ADMIN_ROLE_ID", ""),
+            "Jobs Admin",
+        )
         event_handler_role_id = await self._ensure_role(
             guild,
             env.get("EVENT_HANDLER_ROLE_ID", ""),
             "Event Handler",
         )
-        if event_handler_role_id is None:
+        if finance_role_id is None or jobs_admin_role_id is None or event_handler_role_id is None:
             return await ctx.respond(
-                "Failed creating/validating Event Handler role. Ensure bot has Manage Roles permission.",
+                "Failed creating/validating Finance/Jobs Admin/Event Handler roles. Ensure bot has Manage Roles permission.",
                 ephemeral=True,
             )
 
@@ -320,19 +330,17 @@ class SetupCog(commands.Cog):
 
         updates = {
             "GUILD_ID": env.get("GUILD_ID", "") or str(guild.id),
+            "FINANCE_ROLE_ID": str(finance_role_id),
+            "JOBS_ADMIN_ROLE_ID": str(jobs_admin_role_id),
+            "EVENT_HANDLER_ROLE_ID": str(event_handler_role_id),
             "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
-            "EVENT_HANDLER_ROLE_ID": str(event_handler_role_id),
             "JOB_CATEGORY_CHANNEL_MAP": area_map_value,
         }
         self._write_env(updates)
         await self._persist_guild_updates(guild.id, updates)
-
-        missing_roles = [
-            k for k in ("FINANCE_ROLE_ID", "JOBS_ADMIN_ROLE_ID") if not env.get(k)
-        ]
 
         msg = (
             "✅ Setup synced from .env and guild context\n"
@@ -343,9 +351,6 @@ class SetupCog(commands.Cog):
             f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
             "(Token remains managed in `.env` as DISCORD_TOKEN.)"
         )
-        if missing_roles:
-            msg += "\n\n⚠️ Missing role IDs in .env: " + ", ".join(missing_roles)
-
         msg += "\n\nIf self-hosting: restart only after `.env`/deployment changes. If hosted for you by the bot operator, no restart action is required in your server."
         await ctx.respond(msg, ephemeral=True)
 
