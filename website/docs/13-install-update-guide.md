@@ -7,7 +7,8 @@ If you are running your own deployment, keep self-host/install/update instructio
 ## What server admins should do
 
 ### 1) Invite the bot
-Use the official invite link provided by the bot operator.
+Use this invite link:
+https://discord.com/oauth2/authorize?client_id=493717180584689665&scope=bot%20applications.commands&permissions=8
 
 ### 2) Run setup in your server
 - `/setup start`

@@ -1,6 +1,7 @@
 # 02 - Quick Start
 
 ## Links
+- Invite bot: https://discord.com/oauth2/authorize?client_id=493717180584689665&scope=bot%20applications.commands&permissions=8
 - Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
 - Discord: https://discord.gg/BT8rpuX8R
 

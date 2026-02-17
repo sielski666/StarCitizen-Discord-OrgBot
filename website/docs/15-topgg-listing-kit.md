@@ -6,7 +6,7 @@ title: "15 - Top.gg Listing Kit"
 Use this page as copy/paste material for Top.gg listing setup.
 
 ## Required links
-- Invite URL: your bot OAuth2 invite link
+- Invite URL: `https://discord.com/oauth2/authorize?client_id=493717180584689665&scope=bot%20applications.commands&permissions=8`
 - Support server: `https://discord.gg/BT8rpuX8R`
 - Docs: `https://sielski666.github.io/StarCitizen-Discord-OrgBot/`
 
