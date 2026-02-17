@@ -422,18 +422,26 @@ class JobPostModal(discord.ui.Modal):
             if not interaction.guild:
                 return await interaction.followup.send("Guild context missing for jobs channel routing.", ephemeral=True)
 
+            # Read live guild-scoped routing config so /setup changes apply without restart.
+            guild_settings = await self.cog.db.get_guild_settings(interaction.guild.id)
+            map_raw_live = guild_settings.get("JOB_CATEGORY_CHANNEL_MAP", "") or ""
+            map_live = _parse_job_category_channel_map(map_raw_live) if map_raw_live else JOB_CATEGORY_CHANNEL_MAP
+
+            jobs_channel_live_raw = guild_settings.get("JOBS_CHANNEL_ID", "") or ""
+            jobs_channel_live = int(jobs_channel_live_raw) if str(jobs_channel_live_raw).isdigit() else JOBS_CHANNEL_ID
+
             category_key = str(self.category or "general").strip().lower()
-            routed_id = JOB_CATEGORY_CHANNEL_MAP.get(category_key)
+            routed_id = map_live.get(category_key)
             if routed_id:
                 ch = interaction.guild.get_channel(int(routed_id))
                 if ch is not None:
                     channel = ch
-                elif JOBS_CHANNEL_ID:
-                    fallback = interaction.guild.get_channel(JOBS_CHANNEL_ID)
+                elif jobs_channel_live:
+                    fallback = interaction.guild.get_channel(int(jobs_channel_live))
                     if fallback is not None:
                         channel = fallback
-            elif JOBS_CHANNEL_ID:
-                ch = interaction.guild.get_channel(JOBS_CHANNEL_ID)
+            elif jobs_channel_live:
+                ch = interaction.guild.get_channel(int(jobs_channel_live))
                 if ch is not None:
                     channel = ch
 
