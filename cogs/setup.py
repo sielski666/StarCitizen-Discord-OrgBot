@@ -283,6 +283,8 @@ class SetupCog(commands.Cog):
         if guild is None:
             return await ctx.respond("Guild context required.", ephemeral=True)
 
+        await ctx.defer(ephemeral=True)
+
         env = await self._get_effective_config(guild.id)
 
         ensured = await self._ensure_channels(
@@ -291,7 +293,7 @@ class SetupCog(commands.Cog):
             env.get("SHARES_SELL_CHANNEL_ID", ""),
         )
         if ensured is None:
-            return await ctx.respond(
+            return await ctx.followup.send(
                 "Failed creating/validating channels. Ensure bot has Manage Channels permission.",
                 ephemeral=True,
             )
@@ -314,14 +316,14 @@ class SetupCog(commands.Cog):
             "Event Handler",
         )
         if finance_role_id is None or jobs_admin_role_id is None or event_handler_role_id is None:
-            return await ctx.respond(
+            return await ctx.followup.send(
                 "Failed creating/validating Finance/Jobs Admin/Event Handler roles. Ensure bot has Manage Roles permission.",
                 ephemeral=True,
             )
 
         area_map = await self._ensure_job_area_channels(guild)
         if area_map is None:
-            return await ctx.respond(
+            return await ctx.followup.send(
                 "Failed creating/validating job area channels/category. Ensure bot has Manage Channels permission.",
                 ephemeral=True,
             )
@@ -352,7 +354,7 @@ class SetupCog(commands.Cog):
             "(Token remains managed in `.env` as DISCORD_TOKEN.)"
         )
         msg += "\n\nIf self-hosting: restart only after `.env`/deployment changes. If hosted for you by the bot operator, no restart action is required in your server."
-        await ctx.respond(msg, ephemeral=True)
+        await ctx.followup.send(msg, ephemeral=True)
 
     @setup_group.command(name="status", description="Show current setup values")
     async def setup_status(self, ctx: discord.ApplicationContext):
