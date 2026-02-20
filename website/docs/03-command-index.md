@@ -1,10 +1,10 @@
 # 03 - Command Index
 
 ## Setup
-- `/setup start`
-- `/setup status`
-- `/setup doctor`
-- `/setup createchannels`
+- `/setup start` *(Admin only)*
+- `/setup status` *(Admin only)*
+- `/setup doctor` *(Admin only)*
+- `/setup createchannels` *(Admin only)*
 
 ## UI-first boards (preferred for daily use)
 - `jobs-board`:
@@ -19,67 +19,67 @@
   - **Stock Stats**
 
 ## Jobs
-- `/jobs post`
-- `/jobs complete`
-- `/jobs confirm`
-- `/jobs cancel`
-- `/jobs reopen`
-- `/jobs attend`
-- `/jobs unattend`
-- `/jobs attendees`
-- `/jobs crew_add`
-- `/jobs crew_remove`
-- `/jobs crew_list`
-- `/jobs attendance_sync`
-- `/jobs attendance_lock`
-- `/jobs attendance_unlock`
+- `/jobs post` *(Guild members)*
+- `/jobs complete` *(Claimer or Admin)*
+- `/jobs confirm` *(Finance/Admin only)*
+- `/jobs cancel` *(Admin only)*
+- `/jobs reopen` *(Admin only)*
+- `/jobs attend` *(Guild members)*
+- `/jobs unattend` *(Guild members)*
+- `/jobs attendees` *(Guild members)*
+- `/jobs crew_add` *(Claimer/Jobs Admin/Finance/Admin)*
+- `/jobs crew_remove` *(Claimer/Jobs Admin/Finance/Admin)*
+- `/jobs crew_list` *(Guild members)*
+- `/jobs attendance_sync` *(Finance/Admin only)*
+- `/jobs attendance_lock` *(Finance/Admin only)*
+- `/jobs attendance_unlock` *(Finance/Admin only)*
 
 ## Event jobs
-- `/eventjob post template:<name>`
-- `/eventjob attendee_add job_id member` (finance/admin)
-- `/eventjob attendee_remove job_id member` (finance/admin)
-- `/eventjob attendee_list job_id`
+- `/eventjob post template:<name>` *(Guild members)*
+- `/eventjob attendee_add job_id member` *(Finance/Admin only)*
+- `/eventjob attendee_remove job_id member` *(Finance/Admin only)*
+- `/eventjob attendee_list job_id` *(Guild members)*
 
 ## Event templates
-- `/eventtemplate add`
-- `/eventtemplate update`
-- `/eventtemplate clone`
-- `/eventtemplate list`
-- `/eventtemplate view`
-- `/eventtemplate disable`
-- `/eventtemplate enable`
-- `/eventtemplate delete`
+- `/eventtemplate add` *(Admin only)*
+- `/eventtemplate update` *(Admin only)*
+- `/eventtemplate clone` *(Admin only)*
+- `/eventtemplate list` *(Guild members)*
+- `/eventtemplate view` *(Guild members)*
+- `/eventtemplate disable` *(Admin only)*
+- `/eventtemplate enable` *(Admin only)*
+- `/eventtemplate delete` *(Admin only)*
 
-## Job Test (admin)
-- `/jobtest event_sync_check`
-- `/jobtest event_dryrun_payout`
-- `/jobtest event_force_snapshot`
+## Job Test
+- `/jobtest event_sync_check` *(Admin only)*
+- `/jobtest event_dryrun_payout` *(Admin only)*
+- `/jobtest event_force_snapshot` *(Admin only)*
 
 ## Finance
-- `/finance pending_cashouts`
-- `/finance recent_payouts`
-- `/finance cashout_lookup`
-- `/finance user_audit`
-- `/finance cashout_stats`
-- `/finance stock_stats`
-- `/finance reconcile`
+- `/finance pending_cashouts` *(Finance/Admin only)*
+- `/finance recent_payouts` *(Finance/Admin only)*
+- `/finance cashout_lookup` *(Finance/Admin only)*
+- `/finance user_audit` *(Finance/Admin only)*
+- `/finance cashout_stats` *(Finance/Admin only)*
+- `/finance stock_stats` *(Finance/Admin only)*
+- `/finance reconcile` *(Finance/Admin only)*
 
 ## Treasury
-- `/treasury status`
-- `/treasury set`
+- `/treasury status` *(Guild members)*
+- `/treasury set` *(Finance/Admin only)*
 
 ## Account
-- `/account overview`
-- `/account debugtiers`
-- `/account rolesync`
+- `/account overview` *(Guild members)*
+- `/account debugtiers` *(Finance/Admin only)*
+- `/account rolesync` *(Finance/Admin only)*
 
 ## Bonds
-- `/bond redeem`
+- `/bond redeem` *(Guild members)*
 
 ## Stocks
-- `/stock buy`
-- `/stock sell`
-- `/stock portfolio`
-- `/stock market`
-- `/stock price_nudge` (finance/admin)
-- `/stock price_set` (finance/admin)
+- `/stock buy` *(Guild members)*
+- `/stock sell` *(Guild members)*
+- `/stock portfolio` *(Guild members)*
+- `/stock market` *(Guild members)*
+- `/stock price_nudge` *(Finance/Admin only)*
+- `/stock price_set` *(Finance/Admin only)*
