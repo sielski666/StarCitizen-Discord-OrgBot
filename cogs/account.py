@@ -205,7 +205,7 @@ class CashoutPersistentView(discord.ui.View):
             except Exception:
                 logger.debug("Failed to update rejection thread state request_id=%s", rid, exc_info=True)
 
-        await interaction.followup.send("Rejected and unlocked shares.", ephemeral=True)
+        await interaction.followup.send("Rejected and unlocked stocks.", ephemeral=True)
 
     @discord.ui.button(label="Mark Paid", style=discord.ButtonStyle.primary, custom_id="cashout_paid")
     async def paid_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -240,7 +240,7 @@ class CashoutPersistentView(discord.ui.View):
                 request_id=rid,
                 payout_amount=payout_amount,
                 handled_by=interaction.user.id,
-                note=f"Marked paid ({payout_amount:,} aUEC) and removed shares",
+                note=f"Marked paid ({payout_amount:,} aUEC) and removed stocks",
                 guild_id=(interaction.guild.id if interaction.guild else None),
             )
         except ValueError as e:
@@ -285,7 +285,7 @@ class CashoutPersistentView(discord.ui.View):
             except Exception:
                 logger.debug("Failed sending treasury payout update request_id=%s", rid, exc_info=True)
 
-        await interaction.followup.send("Marked paid and finalized shares.", ephemeral=True)
+        await interaction.followup.send("Marked paid and finalized stocks.", ephemeral=True)
 
 
 class AccountCog(commands.Cog):
@@ -293,7 +293,7 @@ class AccountCog(commands.Cog):
         self.bot = bot
         self.db = db
 
-    account = discord.SlashCommandGroup("account", "Account / shares / cash-out")
+    account = discord.SlashCommandGroup("account", "Account / stocks / cash-out")
 
     @staticmethod
     def _static_cashout_embed(request_id: int, requester_id: int, shares: int, status: str) -> discord.Embed:
@@ -301,7 +301,7 @@ class AccountCog(commands.Cog):
             title=f"🏦 CASH-OUT REQUEST • #{request_id}",
             description=(
                 f"**Requester:** <@{requester_id}>\n"
-                f"**Shares to sell:** `{shares:,}`\n"
+                f"**Stocks to sell:** `{shares:,}`\n"
                 f"**Estimated payout:** `{shares * SHARE_CASHOUT_AUEC_PER_SHARE:,} aUEC`\n"
                 f"**Status:** `{status.upper()}`\n\n"
                 "Finance/Admin: use the buttons below.\n"
@@ -310,7 +310,7 @@ class AccountCog(commands.Cog):
             colour=discord.Colour.from_rgb(32, 41, 74),
         )
         e.set_thumbnail(url="attachment://org_logo.png")
-        e.set_footer(text="Escrow enabled: shares are locked until approved/rejected.")
+        e.set_footer(text="Escrow enabled: stocks are locked until approved/rejected.")
         return e
 
     async def _sync_member_tier_roles(
@@ -425,9 +425,9 @@ class AccountCog(commands.Cog):
         embed.set_thumbnail(url="attachment://org_logo.png")
 
         embed.add_field(name="Org Credits", value=f"`{bal:,}`", inline=True)
-        embed.add_field(name="Shares (Total)", value=f"`{shares_total:,}`", inline=True)
-        embed.add_field(name="Shares (Available)", value=f"`{shares_available:,}`", inline=True)
-        embed.add_field(name="Shares (Locked)", value=f"`{shares_locked:,}`", inline=True)
+        embed.add_field(name="Stocks (Total)", value=f"`{shares_total:,}`", inline=True)
+        embed.add_field(name="Stocks (Available)", value=f"`{shares_available:,}`", inline=True)
+        embed.add_field(name="Stocks (Locked)", value=f"`{shares_locked:,}`", inline=True)
         embed.add_field(name="Reputation", value=f"`{rep:,}`", inline=True)
         embed.add_field(name="Level", value=f"`{level:,}`", inline=True)
 
@@ -672,32 +672,28 @@ class AccountCog(commands.Cog):
 
         await ctx.followup.send(embed=embed, ephemeral=True)
 
-    # =======================
-    # BUY SHARES
-    # =======================
-    @account.command(name="buyshares", description="Buy shares with Org Credits")
-    async def buyshares(self, ctx: discord.ApplicationContext, shares: int):
-        if shares < 1:
-            return await ctx.respond("Shares must be at least 1.", ephemeral=True)
+    async def _buy_stocks_impl(self, ctx: discord.ApplicationContext, stocks: int):
+        if stocks < 1:
+            return await ctx.respond("Stocks must be at least 1.", ephemeral=True)
 
-        cost = int(shares) * int(SHARE_PRICE)
+        cost = int(stocks) * int(SHARE_PRICE)
 
         try:
             await self.db.buy_shares(
                 ctx.author.id,
-                shares_delta=int(shares),
+                shares_delta=int(stocks),
                 cost=int(cost),
-                reference=f"buy {shares}",
+                reference=f"buy {stocks}",
                 guild_id=(ctx.guild.id if ctx.guild else None),
             )
         except ValueError as e:
             return await ctx.respond(str(e), ephemeral=True)
 
         embed = discord.Embed(
-            title="✅ SHARES PURCHASED",
+            title="✅ STOCKS PURCHASED",
             description=(
-                f"Purchased `{int(shares):,}` shares for `{int(cost):,}` Org Credits.\n"
-                f"Price per share: `{int(SHARE_PRICE):,}` Org Credits."
+                f"Purchased `{int(stocks):,}` stocks for `{int(cost):,}` aUEC.\n"
+                f"Price per stock: `{int(SHARE_PRICE):,}` aUEC."
             ),
             colour=discord.Colour.green(),
         )
@@ -706,26 +702,34 @@ class AccountCog(commands.Cog):
         await ctx.respond(embed=embed, files=_logo_files(), ephemeral=True)
 
     # =======================
-    # SELL SHARES (CREATE CASHOUT REQUEST)
+    # BUY STOCKS
     # =======================
-    @account.command(name="sellshares", description="Request to cash-out by selling shares (locks shares until handled)")
-    async def sellshares(self, ctx: discord.ApplicationContext, shares: int):
+    @account.command(name="buystock", description="Buy stocks with aUEC from your account")
+    async def buystock(self, ctx: discord.ApplicationContext, stocks: int):
+        await self._buy_stocks_impl(ctx, int(stocks))
+
+    # Temporary alias for backwards compatibility.
+    @account.command(name="buyshares", description="(Deprecated) Use /account buystock")
+    async def buyshares(self, ctx: discord.ApplicationContext, shares: int):
+        await self._buy_stocks_impl(ctx, int(shares))
+
+    async def _sell_stocks_impl(self, ctx: discord.ApplicationContext, stocks: int):
         await ctx.defer(ephemeral=True)
 
-        if shares < 1:
-            return await ctx.followup.send("Shares must be at least 1.", ephemeral=True)
+        if stocks < 1:
+            return await ctx.followup.send("Stocks must be at least 1.", ephemeral=True)
 
         available = await self.db.get_shares_available(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
-        if available < int(shares):
+        if available < int(stocks):
             locked = await self.db.get_shares_locked(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
             total = await self.db.get_shares(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
             return await ctx.followup.send(
-                f"Not enough **available** shares.\nTotal: `{total:,}` | Locked: `{locked:,}` | Available: `{available:,}`",
+                f"Not enough **available** stocks.\nTotal: `{total:,}` | Locked: `{locked:,}` | Available: `{available:,}`",
                 ephemeral=True,
             )
 
         try:
-            await self.db.lock_shares(ctx.author.id, int(shares), guild_id=(ctx.guild.id if ctx.guild else None))
+            await self.db.lock_shares(ctx.author.id, int(stocks), guild_id=(ctx.guild.id if ctx.guild else None))
         except ValueError as e:
             return await ctx.followup.send(str(e), ephemeral=True)
 
@@ -749,7 +753,7 @@ class AccountCog(commands.Cog):
             channel_id=msg.channel.id,
             message_id=msg.id,
             requester_id=ctx.author.id,
-            shares=int(shares),
+            shares=int(stocks),
         )
 
         thread = await msg.create_thread(
@@ -758,9 +762,8 @@ class AccountCog(commands.Cog):
         )
         await self.db.set_cashout_thread(request_id, thread.id, guild_id=(ctx.guild.id if ctx.guild else None))
 
-        embed = self._static_cashout_embed(request_id, ctx.author.id, int(shares), "pending")
+        embed = self._static_cashout_embed(request_id, ctx.author.id, int(stocks), "pending")
 
-        # IMPORTANT: use the persistent view instance already registered on the bot
         view = getattr(self.bot, "cashout_view", None)
         if view is None:
             await msg.edit(embed=embed, view=None, files=_logo_files())
@@ -769,22 +772,34 @@ class AccountCog(commands.Cog):
 
         await thread.send(
             f"🧾 Cash-out request created by {ctx.author.mention}\n"
-            f"Shares locked: `{int(shares):,}`\n\n"
+            f"Stocks locked: `{int(stocks):,}`\n\n"
             "Finance/Admin: **Approve** → transfer aUEC manually → **Mark Paid**.\n"
-            "Reject will unlock shares automatically."
+            "Reject will unlock stocks automatically."
         )
 
-        payout_amount = int(shares) * int(SHARE_CASHOUT_AUEC_PER_SHARE)
+        payout_amount = int(stocks) * int(SHARE_CASHOUT_AUEC_PER_SHARE)
         treasury_amount = await self.db.get_treasury(guild_id=(ctx.guild.id if ctx.guild else None))
         warn = ""
         if treasury_amount < payout_amount:
             warn = f"\n\n⚠️ Treasury currently: `{treasury_amount:,} aUEC` (below estimated payout `{payout_amount:,} aUEC`)."
 
         await ctx.followup.send(
-            f"Cash-out request **#{request_id}** created. Your `{int(shares):,}` shares are now **locked** until handled.\n"
+            f"Cash-out request **#{request_id}** created. Your `{int(stocks):,}` stocks are now **locked** until handled.\n"
             f"Estimated payout: `{payout_amount:,} aUEC`{warn}",
             ephemeral=True,
         )
+
+    # =======================
+    # SELL STOCKS (CREATE CASHOUT REQUEST)
+    # =======================
+    @account.command(name="sellstock", description="Request to cash-out by selling stocks (locks stocks until handled)")
+    async def sellstock(self, ctx: discord.ApplicationContext, stocks: int):
+        await self._sell_stocks_impl(ctx, int(stocks))
+
+    # Temporary alias for backwards compatibility.
+    @account.command(name="sellshares", description="(Deprecated) Use /account sellstock")
+    async def sellshares(self, ctx: discord.ApplicationContext, shares: int):
+        await self._sell_stocks_impl(ctx, int(shares))
 
 
 def setup(bot: commands.Bot):
