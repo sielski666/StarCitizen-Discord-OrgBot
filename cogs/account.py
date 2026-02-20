@@ -200,7 +200,7 @@ class CashoutPersistentView(discord.ui.View):
         th = await _get_thread(interaction.guild, thread_id)
         if th:
             try:
-                await th.send(f"🟥 Rejected by {interaction.user.mention}. Shares unlocked for <@{requester_id}>.")
+                await th.send(f"🟥 Rejected by {interaction.user.mention}. Stocks unlocked for <@{requester_id}>.")
                 await th.edit(archived=True, locked=True)
             except Exception:
                 logger.debug("Failed to update rejection thread state request_id=%s", rid, exc_info=True)
@@ -397,7 +397,7 @@ class AccountCog(commands.Cog):
     # =======================
     # OVERVIEW
     # =======================
-    @account.command(name="overview", description="View your Org Credits, Shares, Reputation, Level, and Tier")
+    @account.command(name="overview", description="View your Org Credits, Stocks, Reputation, Level, and Tier")
     async def overview(self, ctx: discord.ApplicationContext):
         bal = await self.db.get_balance(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
         shares_total = await self.db.get_shares(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
