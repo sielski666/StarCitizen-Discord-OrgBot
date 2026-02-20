@@ -82,7 +82,7 @@ def _status_text(status: str) -> str:
         "open": "Open",
         "claimed": "Claimed",
         "completed": "Completed",
-        "paid": "Org Points Rewarded",
+        "paid": "aUEC Paid",
         "cancelled": "Cancelled",
     }.get(status, status)
 
@@ -92,7 +92,7 @@ def _status_badge(status: str) -> str:
         "open": "🟦 OPEN",
         "claimed": "🟨 CLAIMED",
         "completed": "🟧 COMPLETED",
-        "paid": "🟩 ORG POINTS REWARDED",
+        "paid": "🟩 AUEC PAID",
         "cancelled": "🟥 CANCELLED",
     }.get(status, status.upper())
 
@@ -154,7 +154,7 @@ def _job_embed(
     e.set_thumbnail(url="attachment://org_logo.png")
 
     e.add_field(name="Status", value=_status_badge(status), inline=True)
-    e.add_field(name="Reward", value=f"`{reward:,}` **Org Points**", inline=True)
+    e.add_field(name="Reward", value=f"`{reward:,}` **aUEC**", inline=True)
     e.add_field(name="Tier", value=_tier_display(int(min_level)), inline=True)
 
     e.add_field(name="Minimum Level", value=f"`{int(min_level)}+`", inline=True)
@@ -839,7 +839,7 @@ class JobWorkflowView(discord.ui.View):
 
         await interaction.followup.send(f"Job #{job_id_db} marked completed.", ephemeral=True)
 
-    @discord.ui.button(label="Confirm Reward", style=discord.ButtonStyle.secondary, custom_id="job_confirm")
+    @discord.ui.button(label="Confirm Payout", style=discord.ButtonStyle.secondary, custom_id="job_confirm")
     async def confirm_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -927,7 +927,7 @@ class JobWorkflowView(discord.ui.View):
             guild_id=(interaction.guild.id if interaction.guild else None),
         )
         if not settlement.get("ok"):
-            return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
+            return await interaction.followup.send("Could not mark as paid (maybe already paid).", ephemeral=True)
 
         paid_targets: list[tuple[int, int]] = list(settlement.get("paid_targets") or [])
 
@@ -1036,14 +1036,14 @@ class JobWorkflowView(discord.ui.View):
                     extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
                     await thread.send(
                         f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
-                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                        f" Status: **AUEC PAID**.{extra}"
                     )
                 else:
                     target_uid = int(payout_targets[0][0])
                     extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
                     await thread.send(
                         f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
-                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                        f" Status: **AUEC PAID**.{extra}"
                     )
             except Exception:
                 logger.debug("Failed sending reward thread update", exc_info=True)
@@ -1065,7 +1065,7 @@ class JobWorkflowView(discord.ui.View):
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             await interaction.followup.send(
-                f"Job #{job_id_db} confirmed. Org Points rewarded: `{paid_total:,} aUEC`.",
+                f"Job #{job_id_db} confirmed. aUEC paid: `{paid_total:,} aUEC`.",
                 ephemeral=True,
             )
 
@@ -1791,7 +1791,7 @@ class JobsCog(commands.Cog):
         await ctx.respond(f"Job #{jid} marked completed.", ephemeral=True)
 
     # JOBCONFIRM (Finance OR Admin)
-    @jobs.command(name="confirm", description="(Finance/Admin) Confirm completed job and reward Org Points")
+    @jobs.command(name="confirm", description="(Finance/Admin) Confirm completed job and pay aUEC")
     @finance_or_admin()
     async def confirm(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
         row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
@@ -1979,14 +1979,14 @@ class JobsCog(commands.Cog):
                     extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
                     await thread.send(
                         f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
-                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                        f" Status: **AUEC PAID**.{extra}"
                     )
                 else:
                     target_uid = int(payout_targets[0][0])
                     extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
                     await thread.send(
                         f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
-                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                        f" Status: **AUEC PAID**.{extra}"
                     )
             except Exception:
                 pass
@@ -2007,7 +2007,7 @@ class JobsCog(commands.Cog):
             )
             await ctx.respond(embed=embed, ephemeral=True)
         else:
-            await ctx.respond(f"Job #{jid} confirmed. Org Points rewarded: `{paid_total:,} aUEC`.", ephemeral=True)
+            await ctx.respond(f"Job #{jid} confirmed. aUEC paid: `{paid_total:,} aUEC`.", ephemeral=True)
 
     # CANCEL (Admin ONLY)
     @jobs.command(name="cancel", description="(Admin) Cancel a job (locks/archives its thread)")
