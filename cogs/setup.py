@@ -8,17 +8,129 @@ from services.permissions import is_admin_member
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 
+class StockBuyModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Buy Stocks")
+        self.units = discord.ui.InputText(label="Stocks", placeholder="e.g. 10", max_length=10)
+        self.add_item(self.units)
+
+    async def callback(self, interaction: discord.Interaction):
+        raw = (self.units.value or "").replace(",", "").strip()
+        if not raw.isdigit() or int(raw) < 1:
+            return await interaction.response.send_message("Stocks must be a whole number >= 1.", ephemeral=True)
+
+        stocks = int(raw)
+        stock_cog = interaction.client.get_cog("StockCog")
+        db = getattr(interaction.client, "db", None)
+        if stock_cog is None or db is None:
+            return await interaction.response.send_message("Stock system unavailable right now.", ephemeral=True)
+
+        gid = interaction.guild.id if interaction.guild else None
+        live_price = await stock_cog._get_live_stock_price(guild_id=gid)
+        cost = int(stocks) * int(live_price)
+
+        try:
+            await db.buy_shares(
+                interaction.user.id,
+                shares_delta=int(stocks),
+                cost=int(cost),
+                reference=f"buy {stocks}",
+                guild_id=gid,
+            )
+            await db.record_stock_trade_metrics(side="buy", units=int(stocks), guild_id=gid)
+            await stock_cog._reprice_from_metrics(guild_id=gid)
+        except ValueError as e:
+            return await interaction.response.send_message(str(e), ephemeral=True)
+
+        await interaction.response.send_message(
+            f"✅ Purchased `{stocks:,}` stocks for `{cost:,} aUEC` (price `{live_price:,} aUEC`).",
+            ephemeral=True,
+        )
+
+
+class StockSellModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Sell Stocks")
+        self.units = discord.ui.InputText(label="Stocks", placeholder="e.g. 10", max_length=10)
+        self.add_item(self.units)
+
+    async def callback(self, interaction: discord.Interaction):
+        raw = (self.units.value or "").replace(",", "").strip()
+        if not raw.isdigit() or int(raw) < 1:
+            return await interaction.response.send_message("Stocks must be a whole number >= 1.", ephemeral=True)
+
+        stocks = int(raw)
+        stock_cog = interaction.client.get_cog("StockCog")
+        db = getattr(interaction.client, "db", None)
+        if stock_cog is None or db is None:
+            return await interaction.response.send_message("Stock system unavailable right now.", ephemeral=True)
+
+        gid = interaction.guild.id if interaction.guild else None
+        available = await db.get_shares_available(interaction.user.id, guild_id=gid)
+        if available < int(stocks):
+            locked = await db.get_shares_locked(interaction.user.id, guild_id=gid)
+            total = await db.get_shares(interaction.user.id, guild_id=gid)
+            return await interaction.response.send_message(
+                f"Not enough available stocks. Total `{total:,}` | Locked `{locked:,}` | Available `{available:,}`",
+                ephemeral=True,
+            )
+
+        try:
+            await db.lock_shares(interaction.user.id, int(stocks), guild_id=gid)
+            await db.record_stock_trade_metrics(side="sell", units=int(stocks), guild_id=gid)
+            await stock_cog._reprice_from_metrics(guild_id=gid)
+        except ValueError as e:
+            return await interaction.response.send_message(str(e), ephemeral=True)
+
+        env = {}
+        setup_cog = interaction.client.get_cog("SetupCog")
+        if setup_cog is not None:
+            env = await setup_cog._get_effective_config(gid)
+
+        target_id = str(env.get("STOCK_SELL_CHANNEL_ID", env.get("SHARES_SELL_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", ""))))
+        post_channel = interaction.channel
+        if interaction.guild and target_id.isdigit():
+            ch = interaction.guild.get_channel(int(target_id))
+            if ch is not None:
+                post_channel = ch
+
+        placeholder = discord.Embed(title="Creating cash-out request…", description="Please wait.")
+        msg = await post_channel.send(embed=placeholder)
+        request_id = await db.create_cashout_request(
+            guild_id=interaction.guild.id if interaction.guild else 0,
+            channel_id=msg.channel.id,
+            message_id=msg.id,
+            requester_id=interaction.user.id,
+            shares=int(stocks),
+        )
+        thread = await msg.create_thread(name=f"Cash-out #{request_id} — {interaction.user.display_name}", auto_archive_duration=1440)
+        await db.set_cashout_thread(request_id, thread.id, guild_id=gid)
+
+        view = getattr(interaction.client, "cashout_view", None)
+        embed = stock_cog._cashout_embed(request_id, interaction.user.id, int(stocks), "pending")
+        await msg.edit(embed=embed, view=view)
+
+        await interaction.response.send_message(
+            f"Cash-out request **#{request_id}** created. `{stocks:,}` stocks are now locked until reviewed.",
+            ephemeral=True,
+        )
+
+
 class JobsBoardView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Post Job", style=discord.ButtonStyle.primary, custom_id="board_jobs_post")
     async def post_job(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Use `/jobs post` (UI flow: area -> tier -> modal).", ephemeral=True)
+        jobs_cog = interaction.client.get_cog("JobsCog")
+        if jobs_cog is None:
+            return await interaction.response.send_message("Jobs system unavailable right now.", ephemeral=True)
+        from cogs.jobs import JobAreaSelectView
+        await interaction.response.send_message("Choose the job area:", view=JobAreaSelectView(jobs_cog), ephemeral=True)
 
     @discord.ui.button(label="Crew", style=discord.ButtonStyle.secondary, custom_id="board_jobs_crew")
     async def crew_help(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Crew actions: `/jobs crew_add`, `/jobs crew_remove`, `/jobs crew_list`.", ephemeral=True)
+        await interaction.response.send_message("Crew tools are in the job thread control card (Add/Remove/View Crew).", ephemeral=True)
 
 
 class StockBoardView(discord.ui.View):
@@ -27,15 +139,25 @@ class StockBoardView(discord.ui.View):
 
     @discord.ui.button(label="Buy", style=discord.ButtonStyle.success, custom_id="board_stock_buy")
     async def buy(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Use `/stock buy`.", ephemeral=True)
+        await interaction.response.send_modal(StockBuyModal())
 
     @discord.ui.button(label="Sell", style=discord.ButtonStyle.primary, custom_id="board_stock_sell")
     async def sell(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Use `/stock sell`.", ephemeral=True)
+        await interaction.response.send_modal(StockSellModal())
 
     @discord.ui.button(label="Market", style=discord.ButtonStyle.secondary, custom_id="board_stock_market")
     async def market(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Use `/stock market`.", ephemeral=True)
+        stock_cog = interaction.client.get_cog("StockCog")
+        if stock_cog is None:
+            return await interaction.response.send_message("Stock system unavailable right now.", ephemeral=True)
+        gid = interaction.guild.id if interaction.guild else None
+        price = await stock_cog._get_live_stock_price(guild_id=gid)
+        metrics = await stock_cog.db.get_stock_trade_metrics(guild_id=gid)
+        net_units = int(metrics.get("net_units_24h") or 0)
+        await interaction.response.send_message(
+            f"📈 Current stock price: `{price:,} aUEC`\nNet demand since reset: `{net_units:+,}` units",
+            ephemeral=True,
+        )
 
 
 class FinanceBoardView(discord.ui.View):
@@ -44,12 +166,22 @@ class FinanceBoardView(discord.ui.View):
 
     @discord.ui.button(label="Cashout Stats", style=discord.ButtonStyle.secondary, custom_id="board_fin_cashout_stats")
     async def cashout_stats(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Use `/finance cashout_stats`.", ephemeral=True)
+        db = getattr(interaction.client, "db", None)
+        if db is None:
+            return await interaction.response.send_message("Finance system unavailable right now.", ephemeral=True)
+        gid = interaction.guild.id if interaction.guild else None
+        pending = await db.count_cashout_requests(statuses=["pending"], guild_id=gid)
+        await interaction.response.send_message(f"Pending cash-out requests: `{int(pending)}`", ephemeral=True)
 
     @discord.ui.button(label="Stock Stats", style=discord.ButtonStyle.secondary, custom_id="board_fin_stock_stats")
     async def stock_stats(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Use `/finance stock_stats`.", ephemeral=True)
-
+        stock_cog = interaction.client.get_cog("StockCog")
+        if stock_cog is None:
+            return await interaction.response.send_message("Stock system unavailable right now.", ephemeral=True)
+        gid = interaction.guild.id if interaction.guild else None
+        total = await stock_cog.db.get_total_stocks(guild_id=gid)
+        price = await stock_cog._get_live_stock_price(guild_id=gid)
+        await interaction.response.send_message(f"Outstanding stocks: `{int(total):,}`\nCurrent price: `{int(price):,} aUEC`", ephemeral=True)
 
 
 class SetupModal(discord.ui.Modal):
