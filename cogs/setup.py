@@ -8,6 +8,50 @@ from services.permissions import is_admin_member
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 
+class JobsBoardView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Post Job", style=discord.ButtonStyle.primary, custom_id="board_jobs_post")
+    async def post_job(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Use `/jobs post` (UI flow: area -> tier -> modal).", ephemeral=True)
+
+    @discord.ui.button(label="Crew", style=discord.ButtonStyle.secondary, custom_id="board_jobs_crew")
+    async def crew_help(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Crew actions: `/jobs crew_add`, `/jobs crew_remove`, `/jobs crew_list`.", ephemeral=True)
+
+
+class StockBoardView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Buy", style=discord.ButtonStyle.success, custom_id="board_stock_buy")
+    async def buy(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Use `/stock buy`.", ephemeral=True)
+
+    @discord.ui.button(label="Sell", style=discord.ButtonStyle.primary, custom_id="board_stock_sell")
+    async def sell(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Use `/stock sell`.", ephemeral=True)
+
+    @discord.ui.button(label="Market", style=discord.ButtonStyle.secondary, custom_id="board_stock_market")
+    async def market(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Use `/stock market`.", ephemeral=True)
+
+
+class FinanceBoardView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Cashout Stats", style=discord.ButtonStyle.secondary, custom_id="board_fin_cashout_stats")
+    async def cashout_stats(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Use `/finance cashout_stats`.", ephemeral=True)
+
+    @discord.ui.button(label="Stock Stats", style=discord.ButtonStyle.secondary, custom_id="board_fin_stock_stats")
+    async def stock_stats(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Use `/finance stock_stats`.", ephemeral=True)
+
+
+
 class SetupModal(discord.ui.Modal):
     def __init__(self, cog: "SetupCog"):
         super().__init__(title="Org Bot Setup")
@@ -136,6 +180,17 @@ class SetupCog(commands.Cog):
         self.bot = bot
         self.db = getattr(bot, "db", None)
 
+        # Persistent board views
+        if not hasattr(bot, "jobs_board_view"):
+            bot.jobs_board_view = JobsBoardView()  # type: ignore
+            bot.add_view(bot.jobs_board_view)  # type: ignore
+        if not hasattr(bot, "stock_board_view"):
+            bot.stock_board_view = StockBoardView()  # type: ignore
+            bot.add_view(bot.stock_board_view)  # type: ignore
+        if not hasattr(bot, "finance_board_view"):
+            bot.finance_board_view = FinanceBoardView()  # type: ignore
+            bot.add_view(bot.finance_board_view)  # type: ignore
+
     setup_group = discord.SlashCommandGroup("setup", "Server setup and config helpers")
 
     async def _ensure_channels(
@@ -248,6 +303,51 @@ class SetupCog(commands.Cog):
         except Exception:
             return None
 
+    def _board_embed(self, kind: str) -> discord.Embed:
+        title_map = {
+            "jobs": "🧭 Jobs Board",
+            "stock": "📈 Stock Board",
+            "finance": "🏦 Finance Board",
+        }
+        desc_map = {
+            "jobs": "Use buttons to start job-related actions.",
+            "stock": "Use buttons to access stock flows quickly.",
+            "finance": "Finance/admin quick actions and visibility links.",
+        }
+        e = discord.Embed(
+            title=title_map.get(kind, "Board"),
+            description=desc_map.get(kind, ""),
+            colour=discord.Colour.from_rgb(32, 41, 74),
+        )
+        return e
+
+    async def _upsert_board_message(self, guild: discord.Guild, channel_id: str, message_id: str, kind: str) -> tuple[str | None, str | None]:
+        if not channel_id.isdigit():
+            return None, None
+        ch = guild.get_channel(int(channel_id))
+        if ch is None:
+            try:
+                ch = await guild.fetch_channel(int(channel_id))
+            except Exception:
+                return None, None
+
+        view = getattr(self.bot, f"{kind}_board_view", None)
+        embed = self._board_embed(kind)
+
+        if message_id.isdigit():
+            try:
+                msg = await ch.fetch_message(int(message_id))
+                await msg.edit(embed=embed, view=view)
+                return str(ch.id), str(msg.id)
+            except Exception:
+                pass
+
+        try:
+            msg = await ch.send(embed=embed, view=view)
+            return str(ch.id), str(msg.id)
+        except Exception:
+            return str(ch.id), None
+
     def _read_env(self) -> dict[str, str]:
         data: dict[str, str] = {}
         if not ENV_PATH.exists():
@@ -285,6 +385,9 @@ class SetupCog(commands.Cog):
             "JOBS_BOARD_CHANNEL_ID",
             "STOCK_BOARD_CHANNEL_ID",
             "FINANCE_BOARD_CHANNEL_ID",
+            "JOBS_BOARD_MESSAGE_ID",
+            "STOCK_BOARD_MESSAGE_ID",
+            "FINANCE_BOARD_MESSAGE_ID",
             "FINANCE_CHANNEL_ID",
         ]
 
@@ -419,6 +522,9 @@ class SetupCog(commands.Cog):
             "JOBS_BOARD_CHANNEL_ID": str(board_map["jobs_board"]),
             "STOCK_BOARD_CHANNEL_ID": str(board_map["stock_board"]),
             "FINANCE_BOARD_CHANNEL_ID": str(board_map["finance_board"]),
+            "JOBS_BOARD_MESSAGE_ID": env.get("JOBS_BOARD_MESSAGE_ID", "") or "",
+            "STOCK_BOARD_MESSAGE_ID": env.get("STOCK_BOARD_MESSAGE_ID", "") or "",
+            "FINANCE_BOARD_MESSAGE_ID": env.get("FINANCE_BOARD_MESSAGE_ID", "") or "",
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": area_map_value,
         }
@@ -589,6 +695,57 @@ class SetupCog(commands.Cog):
 
         await ctx.respond(text, ephemeral=True)
 
+    @setup_group.command(name="deployboards", description="Create or refresh board messages in board channels")
+    async def setup_deploy_boards(self, ctx: discord.ApplicationContext):
+        member = ctx.author if isinstance(ctx.author, discord.Member) else None
+        if not member or not is_admin_member(member):
+            return await ctx.respond("Admin only.", ephemeral=True)
+
+        guild = ctx.guild
+        if guild is None:
+            return await ctx.respond("Guild context required.", ephemeral=True)
+
+        await ctx.defer(ephemeral=True)
+        env = await self._get_effective_config(guild.id)
+
+        jobs_ch, jobs_msg = await self._upsert_board_message(
+            guild,
+            env.get("JOBS_BOARD_CHANNEL_ID", ""),
+            env.get("JOBS_BOARD_MESSAGE_ID", ""),
+            "jobs",
+        )
+        stock_ch, stock_msg = await self._upsert_board_message(
+            guild,
+            env.get("STOCK_BOARD_CHANNEL_ID", ""),
+            env.get("STOCK_BOARD_MESSAGE_ID", ""),
+            "stock",
+        )
+        fin_ch, fin_msg = await self._upsert_board_message(
+            guild,
+            env.get("FINANCE_BOARD_CHANNEL_ID", ""),
+            env.get("FINANCE_BOARD_MESSAGE_ID", ""),
+            "finance",
+        )
+
+        updates = {
+            "JOBS_BOARD_CHANNEL_ID": jobs_ch or env.get("JOBS_BOARD_CHANNEL_ID", ""),
+            "STOCK_BOARD_CHANNEL_ID": stock_ch or env.get("STOCK_BOARD_CHANNEL_ID", ""),
+            "FINANCE_BOARD_CHANNEL_ID": fin_ch or env.get("FINANCE_BOARD_CHANNEL_ID", ""),
+            "JOBS_BOARD_MESSAGE_ID": jobs_msg or env.get("JOBS_BOARD_MESSAGE_ID", ""),
+            "STOCK_BOARD_MESSAGE_ID": stock_msg or env.get("STOCK_BOARD_MESSAGE_ID", ""),
+            "FINANCE_BOARD_MESSAGE_ID": fin_msg or env.get("FINANCE_BOARD_MESSAGE_ID", ""),
+        }
+        self._write_env(updates)
+        await self._persist_guild_updates(guild.id, updates)
+
+        await ctx.followup.send(
+            "✅ Board messages deployed/refreshed\n"
+            f"Jobs Board: <#{updates['JOBS_BOARD_CHANNEL_ID']}> (msg `{updates['JOBS_BOARD_MESSAGE_ID'] or 'missing'}`)\n"
+            f"Stock Board: <#{updates['STOCK_BOARD_CHANNEL_ID']}> (msg `{updates['STOCK_BOARD_MESSAGE_ID'] or 'missing'}`)\n"
+            f"Finance Board: <#{updates['FINANCE_BOARD_CHANNEL_ID']}> (msg `{updates['FINANCE_BOARD_MESSAGE_ID'] or 'missing'}`)",
+            ephemeral=True,
+        )
+
     @setup_group.command(name="createchannels", description="Create missing treasury/stocks + job-area channels")
     async def setup_create_channels(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
@@ -652,6 +809,9 @@ class SetupCog(commands.Cog):
             "JOBS_BOARD_CHANNEL_ID": str(board_map["jobs_board"]),
             "STOCK_BOARD_CHANNEL_ID": str(board_map["stock_board"]),
             "FINANCE_BOARD_CHANNEL_ID": str(board_map["finance_board"]),
+            "JOBS_BOARD_MESSAGE_ID": env.get("JOBS_BOARD_MESSAGE_ID", "") or "",
+            "STOCK_BOARD_MESSAGE_ID": env.get("STOCK_BOARD_MESSAGE_ID", "") or "",
+            "FINANCE_BOARD_MESSAGE_ID": env.get("FINANCE_BOARD_MESSAGE_ID", "") or "",
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": ",".join(f"{k}:{v}" for k, v in area_map.items()),
         }
