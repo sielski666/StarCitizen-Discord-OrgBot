@@ -98,7 +98,8 @@ Required keys used by the bot:
 - `JOB_CATEGORY_CHANNEL_MAP` (area/category -> channel routing map)
 - `JOBS_CHANNEL_ID` (compat/fallback; setup derives this from general map channel)
 - `TREASURY_CHANNEL_ID`
-- `SHARES_SELL_CHANNEL_ID`
+- `STOCK_SELL_CHANNEL_ID` (preferred)
+- `SHARES_SELL_CHANNEL_ID` (legacy compatibility)
 - `FINANCE_CHANNEL_ID` (compat alias; usually same as `TREASURY_CHANNEL_ID`)
 
 Economy/tier values:

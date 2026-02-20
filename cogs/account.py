@@ -18,7 +18,7 @@ SHARE_PRICE = 100_000  # Org Credits per share (buy)
 SHARE_CASHOUT_AUEC_PER_SHARE = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(SHARE_PRICE)) or SHARE_PRICE)
 FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
 TREASURY_CHANNEL_ID = int(os.getenv("TREASURY_CHANNEL_ID", os.getenv("FINANCE_CHANNEL_ID", "0")) or "0")
-SHARES_SELL_CHANNEL_ID = int(os.getenv("SHARES_SELL_CHANNEL_ID", "0") or "0")
+SHARES_SELL_CHANNEL_ID = int(os.getenv("STOCK_SELL_CHANNEL_ID", os.getenv("SHARES_SELL_CHANNEL_ID", "0")) or "0")
 
 # Rep / Level / Tier config
 LEVEL_PER_REP = int(os.getenv("LEVEL_PER_REP", "100") or "100")

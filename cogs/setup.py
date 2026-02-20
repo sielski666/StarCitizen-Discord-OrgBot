@@ -39,7 +39,7 @@ class SetupModal(discord.ui.Modal):
                 [
                     env.get("JOBS_CHANNEL_ID", ""),
                     env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
-                    env.get("SHARES_SELL_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
+                    env.get("STOCK_SELL_CHANNEL_ID", env.get("SHARES_SELL_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", ""))),
                 ]
             ).strip(","),
             placeholder="Optional: leave blank to auto-create channels",
@@ -113,6 +113,7 @@ class SetupModal(discord.ui.Modal):
             "JOBS_CHANNEL_ID": jobs_channel_id,
             "TREASURY_CHANNEL_ID": treasury_channel_id,
             "SHARES_SELL_CHANNEL_ID": shares_sell_channel_id,
+            "STOCK_SELL_CHANNEL_ID": shares_sell_channel_id,
             # Keep compatibility with existing env usage in current code.
             "FINANCE_CHANNEL_ID": treasury_channel_id,
         }
@@ -252,6 +253,7 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
+            "STOCK_SELL_CHANNEL_ID",
             "STOCK_MARKET_CHANNEL_ID",
             "STOCK_ENABLED",
             "STOCK_BASE_PRICE",
@@ -312,7 +314,7 @@ class SetupCog(commands.Cog):
         ensured = await self._ensure_channels(
             guild,
             env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
-            env.get("SHARES_SELL_CHANNEL_ID", ""),
+            env.get("STOCK_SELL_CHANNEL_ID", env.get("STOCK_SELL_CHANNEL_ID", env.get("SHARES_SELL_CHANNEL_ID", ""))),
         )
         if ensured is None:
             return await ctx.followup.send(
@@ -370,6 +372,7 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
+            "STOCK_SELL_CHANNEL_ID": str(shares_id),
             "STOCK_MARKET_CHANNEL_ID": str(stock_market_id),
             "STOCK_ENABLED": env.get("STOCK_ENABLED", "1") or "1",
             "STOCK_BASE_PRICE": env.get("STOCK_BASE_PRICE", "100000") or "100000",
@@ -415,6 +418,7 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
+            "STOCK_SELL_CHANNEL_ID",
             "STOCK_MARKET_CHANNEL_ID",
             "STOCK_ENABLED",
             "STOCK_BASE_PRICE",
@@ -436,7 +440,7 @@ class SetupCog(commands.Cog):
             f"Job Category Map: `{env.get('JOB_CATEGORY_CHANNEL_MAP', 'missing')}`\n"
             f"Jobs Channel: `{env.get('JOBS_CHANNEL_ID', 'missing')}`\n"
             f"Treasury Channel: `{env.get('TREASURY_CHANNEL_ID', env.get('FINANCE_CHANNEL_ID', 'missing'))}`\n"
-            f"Stocks Sell Channel: `{env.get('SHARES_SELL_CHANNEL_ID', 'missing')}`\n"
+            f"Stocks Sell Channel: `{env.get('STOCK_SELL_CHANNEL_ID', env.get('SHARES_SELL_CHANNEL_ID', 'missing'))}`\n"
         )
         if missing:
             text += "\n⚠️ Missing: " + ", ".join(missing)
@@ -489,7 +493,7 @@ class SetupCog(commands.Cog):
             else:
                 checks_ok.append(f"{role_key} valid")
 
-        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID", "STOCK_MARKET_CHANNEL_ID"]
+        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID", "STOCK_SELL_CHANNEL_ID", "STOCK_MARKET_CHANNEL_ID"]
         for ck in channel_keys:
             cv = env.get(ck, "")
             if not cv or not cv.isdigit():
@@ -558,7 +562,7 @@ class SetupCog(commands.Cog):
         ensured = await self._ensure_channels(
             guild,
             env.get("TREASURY_CHANNEL_ID", env.get("FINANCE_CHANNEL_ID", "")),
-            env.get("SHARES_SELL_CHANNEL_ID", ""),
+            env.get("STOCK_SELL_CHANNEL_ID", env.get("STOCK_SELL_CHANNEL_ID", env.get("SHARES_SELL_CHANNEL_ID", ""))),
         )
         if ensured is None:
             return await ctx.respond(
@@ -589,6 +593,7 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
+            "STOCK_SELL_CHANNEL_ID": str(shares_id),
             "STOCK_MARKET_CHANNEL_ID": str(stock_market_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": ",".join(f"{k}:{v}" for k, v in area_map.items()),

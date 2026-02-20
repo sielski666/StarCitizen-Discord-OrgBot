@@ -10,7 +10,7 @@ ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 DEFAULT_STOCK_PRICE = 100_000
 STOCK_CASHOUT_AUEC_PER_STOCK = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(DEFAULT_STOCK_PRICE)) or DEFAULT_STOCK_PRICE)
 FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
-SHARES_SELL_CHANNEL_ID = int(os.getenv("SHARES_SELL_CHANNEL_ID", "0") or "0")
+SHARES_SELL_CHANNEL_ID = int(os.getenv("STOCK_SELL_CHANNEL_ID", os.getenv("SHARES_SELL_CHANNEL_ID", "0")) or "0")
 
 logger = logging.getLogger(__name__)
 
