@@ -1,112 +1,58 @@
-# 05 - Jobs Commands
+# 05 - Jobs (UI-First Workflow)
 
-## `/jobs post`
-**Who:** guild members
+Jobs are now designed for **board + button + modal** usage.
 
-**How to use:**
-- Preferred: click **Post Job** on `jobs-board`
-- Fallback: run `/jobs post`
-- Then choose area -> choose tier -> fill modal
+## 1) Create a job
+- Go to `jobs-board`
+- Click **Post Job**
+- Choose area
+- Choose tier
+- Fill modal (title, description, reward)
 
-**What it does:**
-- Creates a non-event job card routed to the mapped area channel.
-- Reserves escrow from available treasury at job creation.
-
-> Event jobs are posted with `/eventjob post template:<name>`.
-
----
-
-## `/jobs complete job_id:<id>`
-**Who:**
-- Non-event jobs: claimer or admin
-- Event jobs: admin (no claim path)
-
-**How to use:**
-- Run after work/event is done.
-
-**What it does:**
-- Moves job to `completed`.
-- Finance/admin can then confirm payout.
+Result:
+- Job is posted to the mapped area channel (`jobs-general/salvage/mining/hauling/event`)
+- Escrow is reserved at creation
 
 ---
 
-## `/jobs confirm job_id:<id>`
-**Who:** finance/admin
+## 2) Accept and run job
+- Open the job card
+- Click **Accept**
 
-**How to use:**
-- Run only after completion.
-
-**What it does:**
-- Marks job paid (idempotent-safe state transition first).
-- Non-event job: pays claimer + optional crew split.
-- Event job: pays attendance snapshot split.
-- Adds rep and role-sync per payout target.
-- Releases escrow and writes ledger entries.
+Result:
+- Thread is created
+- Main card and thread control card are synced
 
 ---
 
-## `/jobs cancel job_id:<id>`
-**Who:** admin
+## 3) Crew management (non-event jobs)
+After accept/claim, use crew UI from either:
+- the thread control card **Crew** button, or
+- `jobs-board` → **Crew**
 
-**What it does:**
-- Cancels active job.
-- Releases reserved escrow back to available treasury.
-
-## `/jobs reopen job_id:<id>`
-**Who:** admin
-
-**What it does:**
-- Reopens cancelled job to `open`.
-
----
-
-## Crew management (non-event jobs)
-
-Preferred UI path:
-- Click **Crew** on `jobs-board`
-- Choose **Add Crew**, **Remove Crew**, or **View Crew**
-- Provide job/member IDs in modal where needed
-
-Fallback command path:
-
-### `/jobs crew_add job_id:<id> member:<member>`
-Adds a crew member to the job payout group.
+Crew UI actions:
+- **Add Crew**
+- **Remove Crew**
+- **View Crew**
 
 Rules:
-- Job must be `claimed` or `completed`
 - Non-event jobs only
-- Managed by claimer, jobs admin, finance, or admin
-
-### `/jobs crew_remove job_id:<id> member:<member>`
-Removes a crew member from the job payout group.
-
-### `/jobs crew_list job_id:<id>`
-Shows current payout group (claimer + crew).
+- Job must be claimed/completed
+- Managed by claimer, Jobs Admin, Finance, or Admin
 
 ---
 
-## Event attendance commands
+## 4) Complete + confirm payout
+- Claimer/admin marks job complete from the job card
+- Finance/admin confirms payout from the card
 
-### `/jobs attend job_id:<id>`
-Adds yourself to event attendance list.
+Result:
+- Non-event: payout split across claimer + crew
+- Event: payout split across attendance snapshot
+- Rep and ledger updates applied
 
-### `/jobs unattend job_id:<id>`
-Removes yourself from event attendance list.
+---
 
-### `/jobs attendees job_id:<id>`
-Shows tracked attendees.
-
-### `/jobs attendance_sync job_id:<id>`
-**Who:** finance/admin
-
-Force-sync attendance from Scheduled Event RSVPs.
-
-### `/jobs attendance_lock job_id:<id>`
-**Who:** finance/admin
-
-Lock attendance to prevent changes.
-
-### `/jobs attendance_unlock job_id:<id>`
-**Who:** finance/admin
-
-Unlock attendance for changes/sync.
+## 5) Event jobs
+Event jobs are RSVP/attendance based (no claim path).
+Use the event flow in the Event Jobs page.
