@@ -60,6 +60,11 @@ class StockCog(commands.Cog):
                 reference=f"buy {stocks}",
                 guild_id=(ctx.guild.id if ctx.guild else None),
             )
+            await self.db.record_stock_trade_metrics(
+                side="buy",
+                units=int(stocks),
+                guild_id=(ctx.guild.id if ctx.guild else None),
+            )
         except ValueError as e:
             return await ctx.respond(str(e), ephemeral=True)
 
@@ -91,6 +96,11 @@ class StockCog(commands.Cog):
 
         try:
             await self.db.lock_shares(ctx.author.id, int(stocks), guild_id=(ctx.guild.id if ctx.guild else None))
+            await self.db.record_stock_trade_metrics(
+                side="sell",
+                units=int(stocks),
+                guild_id=(ctx.guild.id if ctx.guild else None),
+            )
         except ValueError as e:
             return await ctx.followup.send(str(e), ephemeral=True)
 

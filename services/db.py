@@ -143,6 +143,35 @@ CREATE TABLE IF NOT EXISTS payout_bonds (
 CREATE INDEX IF NOT EXISTS idx_payout_bonds_guild_status_created ON payout_bonds(guild_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_payout_bonds_user_status_created ON payout_bonds(user_id, status, created_at);
 
+-- Stock market configuration/state (per guild).
+CREATE TABLE IF NOT EXISTS stock_market_config (
+  guild_id INTEGER PRIMARY KEY,
+  base_price INTEGER NOT NULL DEFAULT 100000,
+  min_price INTEGER NOT NULL DEFAULT 50000,
+  max_price INTEGER NOT NULL DEFAULT 250000,
+  daily_move_cap_bps INTEGER NOT NULL DEFAULT 500,
+  demand_sensitivity_bps INTEGER NOT NULL DEFAULT 50,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS stock_price_state (
+  guild_id INTEGER PRIMARY KEY,
+  current_price INTEGER NOT NULL DEFAULT 100000,
+  day_open_price INTEGER NOT NULL DEFAULT 100000,
+  day_high_price INTEGER NOT NULL DEFAULT 100000,
+  day_low_price INTEGER NOT NULL DEFAULT 100000,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS stock_trade_metrics (
+  guild_id INTEGER PRIMARY KEY,
+  buys_units_24h INTEGER NOT NULL DEFAULT 0,
+  sells_units_24h INTEGER NOT NULL DEFAULT 0,
+  net_units_24h INTEGER NOT NULL DEFAULT 0,
+  last_trade_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Simple transaction log (for balance + shares + rep deltas)
 CREATE TABLE IF NOT EXISTS transactions (
   tx_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,6 +243,9 @@ class Database:
         self.conn = await aiosqlite.connect(self.path)
         await self.conn.executescript(SCHEMA)
         await self.conn.execute("INSERT OR IGNORE INTO treasury(id, amount) VALUES(1, 0)")
+        await self.conn.execute("INSERT OR IGNORE INTO stock_market_config(guild_id) VALUES(0)")
+        await self.conn.execute("INSERT OR IGNORE INTO stock_price_state(guild_id) VALUES(0)")
+        await self.conn.execute("INSERT OR IGNORE INTO stock_trade_metrics(guild_id) VALUES(0)")
         await self._ensure_jobs_columns()
         await self._ensure_ledger_columns()
         await self._ensure_transactions_columns()
@@ -353,6 +385,153 @@ class Database:
         )
         rows = await cur.fetchall()
         return {str(k): str(v) for k, v in rows}
+
+    # =========================
+    # STOCK MARKET STATE/CONFIG
+    # =========================
+    async def ensure_stock_market_rows(self, guild_id: int | None = None):
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.conn.execute("INSERT OR IGNORE INTO stock_market_config(guild_id) VALUES(?)", (gid,))
+        await self.conn.execute("INSERT OR IGNORE INTO stock_price_state(guild_id) VALUES(?)", (gid,))
+        await self.conn.execute("INSERT OR IGNORE INTO stock_trade_metrics(guild_id) VALUES(?)", (gid,))
+        await self.conn.commit()
+
+    async def get_stock_market_config(self, guild_id: int | None = None) -> dict:
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.ensure_stock_market_rows(guild_id=gid)
+        cur = await self.conn.execute(
+            """
+            SELECT base_price, min_price, max_price, daily_move_cap_bps, demand_sensitivity_bps
+            FROM stock_market_config
+            WHERE guild_id=?
+            """,
+            (gid,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return {"base_price": 100000, "min_price": 50000, "max_price": 250000, "daily_move_cap_bps": 500, "demand_sensitivity_bps": 50}
+        return {
+            "base_price": int(row[0]),
+            "min_price": int(row[1]),
+            "max_price": int(row[2]),
+            "daily_move_cap_bps": int(row[3]),
+            "demand_sensitivity_bps": int(row[4]),
+        }
+
+    async def set_stock_market_config(
+        self,
+        guild_id: int | None = None,
+        *,
+        base_price: int | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        daily_move_cap_bps: int | None = None,
+        demand_sensitivity_bps: int | None = None,
+    ):
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.ensure_stock_market_rows(guild_id=gid)
+        cur_cfg = await self.get_stock_market_config(guild_id=gid)
+        base = int(base_price) if base_price is not None else int(cur_cfg["base_price"])
+        mn = int(min_price) if min_price is not None else int(cur_cfg["min_price"])
+        mx = int(max_price) if max_price is not None else int(cur_cfg["max_price"])
+        cap = int(daily_move_cap_bps) if daily_move_cap_bps is not None else int(cur_cfg["daily_move_cap_bps"])
+        sens = int(demand_sensitivity_bps) if demand_sensitivity_bps is not None else int(cur_cfg["demand_sensitivity_bps"])
+        if mn > mx:
+            raise ValueError("min_price cannot be greater than max_price")
+        await self.conn.execute(
+            """
+            UPDATE stock_market_config
+            SET base_price=?, min_price=?, max_price=?, daily_move_cap_bps=?, demand_sensitivity_bps=?, updated_at=datetime('now')
+            WHERE guild_id=?
+            """,
+            (base, mn, mx, cap, sens, gid),
+        )
+        await self.conn.commit()
+
+    async def get_stock_price_state(self, guild_id: int | None = None) -> dict:
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.ensure_stock_market_rows(guild_id=gid)
+        cur = await self.conn.execute(
+            "SELECT current_price, day_open_price, day_high_price, day_low_price, updated_at FROM stock_price_state WHERE guild_id=?",
+            (gid,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return {"current_price": 100000, "day_open_price": 100000, "day_high_price": 100000, "day_low_price": 100000, "updated_at": None}
+        return {
+            "current_price": int(row[0]),
+            "day_open_price": int(row[1]),
+            "day_high_price": int(row[2]),
+            "day_low_price": int(row[3]),
+            "updated_at": str(row[4]) if row[4] is not None else None,
+        }
+
+    async def set_stock_price_state(
+        self,
+        guild_id: int | None = None,
+        *,
+        current_price: int,
+        day_open_price: int | None = None,
+        day_high_price: int | None = None,
+        day_low_price: int | None = None,
+    ):
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.ensure_stock_market_rows(guild_id=gid)
+        current = int(current_price)
+        state = await self.get_stock_price_state(guild_id=gid)
+        op = int(day_open_price) if day_open_price is not None else int(state["day_open_price"])
+        hi = int(day_high_price) if day_high_price is not None else max(int(state["day_high_price"]), current)
+        lo = int(day_low_price) if day_low_price is not None else min(int(state["day_low_price"]), current)
+        await self.conn.execute(
+            """
+            UPDATE stock_price_state
+            SET current_price=?, day_open_price=?, day_high_price=?, day_low_price=?, updated_at=datetime('now')
+            WHERE guild_id=?
+            """,
+            (current, op, hi, lo, gid),
+        )
+        await self.conn.commit()
+
+    async def record_stock_trade_metrics(self, side: str, units: int, guild_id: int | None = None):
+        gid = int(guild_id) if guild_id is not None else 0
+        qty = max(0, int(units))
+        if qty <= 0:
+            return
+        await self.ensure_stock_market_rows(guild_id=gid)
+        side_norm = str(side).strip().lower()
+        buy_add = qty if side_norm == "buy" else 0
+        sell_add = qty if side_norm == "sell" else 0
+        await self.conn.execute(
+            """
+            UPDATE stock_trade_metrics
+            SET buys_units_24h = buys_units_24h + ?,
+                sells_units_24h = sells_units_24h + ?,
+                net_units_24h = net_units_24h + ?,
+                last_trade_at = datetime('now'),
+                updated_at = datetime('now')
+            WHERE guild_id=?
+            """,
+            (buy_add, sell_add, (buy_add - sell_add), gid),
+        )
+        await self.conn.commit()
+
+    async def get_stock_trade_metrics(self, guild_id: int | None = None) -> dict:
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.ensure_stock_market_rows(guild_id=gid)
+        cur = await self.conn.execute(
+            "SELECT buys_units_24h, sells_units_24h, net_units_24h, last_trade_at, updated_at FROM stock_trade_metrics WHERE guild_id=?",
+            (gid,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return {"buys_units_24h": 0, "sells_units_24h": 0, "net_units_24h": 0, "last_trade_at": None, "updated_at": None}
+        return {
+            "buys_units_24h": int(row[0]),
+            "sells_units_24h": int(row[1]),
+            "net_units_24h": int(row[2]),
+            "last_trade_at": str(row[3]) if row[3] is not None else None,
+            "updated_at": str(row[4]) if row[4] is not None else None,
+        }
 
     async def _begin(self):
         await self.conn.execute("BEGIN IMMEDIATE")
