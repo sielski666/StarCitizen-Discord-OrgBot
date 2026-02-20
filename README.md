@@ -105,6 +105,8 @@ Economy/tier values:
 - `SHARE_CASHOUT_AUEC_PER_SHARE`
 - `LEVEL_PER_REP`
 - `REP_PER_JOB_PAYOUT`
+- `BOND_AUTO_REDEEM` (scaffold; future use)
+- `MIN_IMMEDIATE_PAYOUT_PERCENT` (scaffold; future use)
 - `JOB_TIERS`
 - `LEVEL_ROLE_MAP`
 

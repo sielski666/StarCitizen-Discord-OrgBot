@@ -14,9 +14,21 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return bool(default)
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(int(default)))
+    try:
+        return int(str(raw).strip())
+    except Exception:
+        return int(default)
+
+
 TREASURY_AUTODEDUCT = _env_flag("TREASURY_AUTODEDUCT", default=True)
 STRICT_TREASURY = _env_flag("STRICT_TREASURY", default=False)
-SHARE_CASHOUT_AUEC_PER_SHARE = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", "100000") or "100000")
+SHARE_CASHOUT_AUEC_PER_SHARE = _env_int("SHARE_CASHOUT_AUEC_PER_SHARE", 100000)
+
+# Bond config scaffolding (future use)
+BOND_AUTO_REDEEM = _env_flag("BOND_AUTO_REDEEM", default=False)
+MIN_IMMEDIATE_PAYOUT_PERCENT = max(0, min(100, _env_int("MIN_IMMEDIATE_PAYOUT_PERCENT", 0)))
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
