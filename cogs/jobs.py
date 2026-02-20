@@ -730,6 +730,16 @@ class JobWorkflowView(discord.ui.View):
             f"When finished: click **Complete** on the job card."
         )
 
+        try:
+            thread_control = await thread.send(
+                embed=updated_embed,
+                view=JobWorkflowView(self.db, status="claimed", is_event=False),
+                files=_logo_files() or None,
+            )
+            await self.db.set_job_thread_control_message(int(job_id_db), int(thread_control.id))
+        except Exception:
+            logger.debug("Failed to post thread control card for job=%s", job_id_db, exc_info=True)
+
         await interaction.followup.send("Accepted. Thread created.", ephemeral=True)
 
     @discord.ui.button(label="Complete", style=discord.ButtonStyle.primary, custom_id="job_complete")
@@ -792,6 +802,33 @@ class JobWorkflowView(discord.ui.View):
             view=JobWorkflowView(self.db, status="completed", is_event=is_event_job),
             files=files if files else None,
         )
+
+        # Keep both main card and thread control card synced.
+        if interaction.guild:
+            try:
+                if int(message_id) != int(interaction.message.id):
+                    main_ch = interaction.guild.get_channel(int(channel_id)) or await interaction.guild.fetch_channel(int(channel_id))
+                    main_msg = await main_ch.fetch_message(int(message_id))
+                    await main_msg.edit(
+                        embed=updated,
+                        view=JobWorkflowView(self.db, status="completed", is_event=is_event_job),
+                        files=_logo_files() or None,
+                    )
+            except Exception:
+                logger.debug("Failed syncing main job card after complete job=%s", job_id_db, exc_info=True)
+
+            try:
+                control_id = await self.db.get_job_thread_control_message(int(job_id_db))
+                if control_id and thread_id:
+                    th = interaction.guild.get_thread(int(thread_id)) or await interaction.guild.fetch_channel(int(thread_id))
+                    tmsg = await th.fetch_message(int(control_id))
+                    await tmsg.edit(
+                        embed=updated,
+                        view=JobWorkflowView(self.db, status="completed", is_event=is_event_job),
+                        files=_logo_files() or None,
+                    )
+            except Exception:
+                logger.debug("Failed syncing thread control card after complete job=%s", job_id_db, exc_info=True)
 
         if thread_id and interaction.guild:
             try:
@@ -961,6 +998,32 @@ class JobWorkflowView(discord.ui.View):
             view=JobWorkflowView(self.db, status="paid", is_event=is_event_job),
             files=files if files else None,
         )
+
+        if interaction.guild:
+            try:
+                if int(message_id) != int(interaction.message.id):
+                    main_ch = interaction.guild.get_channel(int(channel_id)) or await interaction.guild.fetch_channel(int(channel_id))
+                    main_msg = await main_ch.fetch_message(int(message_id))
+                    await main_msg.edit(
+                        embed=updated,
+                        view=JobWorkflowView(self.db, status="paid", is_event=is_event_job),
+                        files=_logo_files() or None,
+                    )
+            except Exception:
+                logger.debug("Failed syncing main job card after confirm job=%s", job_id_db, exc_info=True)
+
+            try:
+                control_id = await self.db.get_job_thread_control_message(int(job_id_db))
+                if control_id and thread_id:
+                    th = interaction.guild.get_thread(int(thread_id)) or await interaction.guild.fetch_channel(int(thread_id))
+                    tmsg = await th.fetch_message(int(control_id))
+                    await tmsg.edit(
+                        embed=updated,
+                        view=JobWorkflowView(self.db, status="paid", is_event=is_event_job),
+                        files=_logo_files() or None,
+                    )
+            except Exception:
+                logger.debug("Failed syncing thread control card after confirm job=%s", job_id_db, exc_info=True)
 
         paid_total = int(sum(int(a) for _, a in paid_targets))
         bond_total = int(settlement.get("bond_amount") or 0)
@@ -1889,6 +1952,20 @@ class JobsCog(commands.Cog):
             )
         except Exception:
             pass
+
+        if ctx.guild and thread_id:
+            try:
+                control_id = await self.db.get_job_thread_control_message(int(jid))
+                if control_id:
+                    th = ctx.guild.get_thread(int(thread_id)) or await ctx.guild.fetch_channel(int(thread_id))
+                    tmsg = await th.fetch_message(int(control_id))
+                    await tmsg.edit(
+                        embed=updated,
+                        view=JobWorkflowView(self.db, status="paid", is_event=is_event_job),
+                        files=_logo_files() or None,
+                    )
+            except Exception:
+                pass
 
         paid_total = int(sum(int(a) for _, a in paid_targets))
         bond_total = int(settlement.get("bond_amount") or 0)

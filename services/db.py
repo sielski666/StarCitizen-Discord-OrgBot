@@ -297,6 +297,8 @@ class Database:
                 legacy_gid = 0
             if legacy_gid > 0:
                 await self.conn.execute("UPDATE jobs SET guild_id=? WHERE guild_id=0", (int(legacy_gid),))
+        if "thread_control_message_id" not in existing:
+            await self.conn.execute("ALTER TABLE jobs ADD COLUMN thread_control_message_id INTEGER")
 
     async def _ensure_ledger_columns(self):
         cur = await self.conn.execute("PRAGMA table_info(ledger_entries)")
@@ -1321,6 +1323,20 @@ class Database:
             (int(thread_id), int(job_id)),
         )
         await self.conn.commit()
+
+    async def set_job_thread_control_message(self, job_id: int, message_id: int | None):
+        await self.conn.execute(
+            "UPDATE jobs SET thread_control_message_id=?, updated_at=datetime('now') WHERE job_id=?",
+            (int(message_id) if message_id is not None else None, int(job_id)),
+        )
+        await self.conn.commit()
+
+    async def get_job_thread_control_message(self, job_id: int) -> int | None:
+        cur = await self.conn.execute("SELECT thread_control_message_id FROM jobs WHERE job_id=?", (int(job_id),))
+        row = await cur.fetchone()
+        if not row or row[0] is None:
+            return None
+        return int(row[0])
 
     async def complete_job(self, job_id: int) -> bool:
         await self._begin()
