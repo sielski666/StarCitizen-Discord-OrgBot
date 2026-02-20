@@ -24,15 +24,18 @@ class TreasuryCog(commands.Cog):
 
     @treasury.command(name="status", description="View the current treasury amount")
     async def status(self, ctx: discord.ApplicationContext):
-        amount, updated_by, updated_at = await self.db.get_treasury_meta(
-            guild_id=(ctx.guild.id if ctx.guild else None)
-        )
+        gid = (ctx.guild.id if ctx.guild else None)
+        amount, updated_by, updated_at = await self.db.get_treasury_meta(guild_id=gid)
+        outstanding_bonds = await self.db.get_total_outstanding_bonds(guild_id=gid)
+        net_available = int(amount) - int(outstanding_bonds)
 
         embed = discord.Embed(
             title="🏦 TREASURY STATUS",
             description=f"**Current Treasury:** `{amount:,} aUEC`",
             colour=discord.Colour.from_rgb(32, 41, 74),
         )
+        embed.add_field(name="Outstanding Bonds (Liability)", value=f"`{int(outstanding_bonds):,} aUEC`", inline=True)
+        embed.add_field(name="Net Available (after bonds)", value=f"`{int(net_available):,} aUEC`", inline=True)
 
         if updated_by:
             embed.add_field(name="Last Updated By", value=f"<@{updated_by}>", inline=True)
@@ -40,7 +43,7 @@ class TreasuryCog(commands.Cog):
             embed.add_field(name="Last Updated By", value="—", inline=True)
 
         embed.add_field(name="Last Updated At", value=f"`{updated_at}`" if updated_at else "—", inline=True)
-        embed.set_footer(text="Treasury is manual (no Star Citizen API). Used for cash-out safety checks.")
+        embed.set_footer(text="Treasury is manual (no Star Citizen API). Bond IOUs are outstanding payout liabilities.")
 
         post_channel = self._target_channel(ctx)
         if post_channel is not None:

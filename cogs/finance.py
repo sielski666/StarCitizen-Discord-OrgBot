@@ -259,6 +259,8 @@ class FinanceCog(commands.Cog):
         paid = await self.db.count_cashout_requests(["paid"], guild_id=gid)
         rejected = await self.db.count_cashout_requests(["rejected"], guild_id=gid)
         treasury = await self.db.get_treasury(guild_id=gid)
+        outstanding_bonds = await self.db.get_total_outstanding_bonds(guild_id=gid)
+        net_available = int(treasury) - int(outstanding_bonds)
 
         embed = discord.Embed(
             title="📊 Cash-out Stats",
@@ -269,7 +271,9 @@ class FinanceCog(commands.Cog):
         embed.add_field(name="Approved", value=f"`{approved}`", inline=True)
         embed.add_field(name="Paid", value=f"`{paid}`", inline=True)
         embed.add_field(name="Rejected", value=f"`{rejected}`", inline=True)
-        embed.add_field(name="Treasury", value=f"`{treasury:,} aUEC`", inline=False)
+        embed.add_field(name="Treasury", value=f"`{treasury:,} aUEC`", inline=True)
+        embed.add_field(name="Outstanding Bonds", value=f"`{int(outstanding_bonds):,} aUEC`", inline=True)
+        embed.add_field(name="Net Available", value=f"`{int(net_available):,} aUEC`", inline=True)
 
         await ctx.followup.send(embed=embed, files=_logo_files(), ephemeral=True)
 
