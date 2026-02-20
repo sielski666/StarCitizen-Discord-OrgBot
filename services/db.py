@@ -172,6 +172,14 @@ CREATE TABLE IF NOT EXISTS stock_trade_metrics (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS stock_price_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id INTEGER NOT NULL,
+  price INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_stock_price_history_guild_time ON stock_price_history(guild_id, created_at);
+
 -- Simple transaction log (for balance + shares + rep deltas)
 CREATE TABLE IF NOT EXISTS transactions (
   tx_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -489,6 +497,10 @@ class Database:
             WHERE guild_id=?
             """,
             (current, op, hi, lo, gid),
+        )
+        await self.conn.execute(
+            "INSERT INTO stock_price_history(guild_id, price) VALUES(?, ?)",
+            (gid, int(current)),
         )
         await self.conn.commit()
 
@@ -1405,6 +1417,54 @@ class Database:
         targets = [(int(claimed_by), int(reward))] if claimed_by and reward > 0 else []
         result = await self.settle_job_payout(int(job_id), targets, confirmed_by=None, guild_id=None)
         return bool(result.get("ok"))
+
+    async def count_user_cashout_requests(self, user_id: int, statuses: list[str], guild_id: int | None = None) -> int:
+        st = [str(x).strip().lower() for x in statuses if str(x).strip()]
+        if not st:
+            return 0
+        q_marks = ",".join(["?"] * len(st))
+        gid = int(guild_id) if guild_id is not None else 0
+        params = [int(user_id)] + st + [gid]
+        cur = await self.conn.execute(
+            f"SELECT COUNT(*) FROM cashout_requests WHERE requester_id=? AND status IN ({q_marks}) AND guild_id=?",
+            tuple(params),
+        )
+        row = await cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    async def get_total_stocks(self, guild_id: int | None = None) -> int:
+        if guild_id is None:
+            cur = await self.conn.execute("SELECT COALESCE(SUM(shares), 0) FROM shareholdings")
+        else:
+            cur = await self.conn.execute("SELECT COALESCE(SUM(shares), 0) FROM shareholdings_by_guild WHERE guild_id=?", (int(guild_id),))
+        row = await cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    async def get_stock_change_bps(self, days: int, guild_id: int | None = None) -> int:
+        gid = int(guild_id) if guild_id is not None else 0
+        cur_now = await self.conn.execute(
+            "SELECT current_price FROM stock_price_state WHERE guild_id=?",
+            (gid,),
+        )
+        now_row = await cur_now.fetchone()
+        if not now_row or int(now_row[0] or 0) <= 0:
+            return 0
+        current = int(now_row[0])
+
+        cur_ref = await self.conn.execute(
+            """
+            SELECT price FROM stock_price_history
+            WHERE guild_id=? AND created_at >= datetime('now', ?)
+            ORDER BY datetime(created_at) ASC, id ASC
+            LIMIT 1
+            """,
+            (gid, f"-{int(days)} days"),
+        )
+        ref_row = await cur_ref.fetchone()
+        if not ref_row or int(ref_row[0] or 0) <= 0:
+            return 0
+        ref_price = int(ref_row[0])
+        return int(round(((current - ref_price) / ref_price) * 10000))
 
     # =========================
     # PAYOUT BONDS

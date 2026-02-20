@@ -277,6 +277,47 @@ class FinanceCog(commands.Cog):
 
         await ctx.followup.send(embed=embed, files=_logo_files(), ephemeral=True)
 
+    @finance.command(name="stock_stats", description="Stock market stats and treasury exposure")
+    @finance_or_admin()
+    async def stock_stats(self, ctx: discord.ApplicationContext):
+        await ctx.defer(ephemeral=True)
+
+        gid = ctx.guild.id if ctx.guild else None
+        cfg = await self.db.get_stock_market_config(guild_id=gid)
+        state = await self.db.get_stock_price_state(guild_id=gid)
+        metrics = await self.db.get_stock_trade_metrics(guild_id=gid)
+        current = int(state.get("current_price") or cfg.get("base_price") or SHARE_PRICE)
+        open_24h = int(state.get("day_open_price") or current)
+        change_24h_bps = 0 if open_24h <= 0 else int(round(((current - open_24h) / open_24h) * 10000))
+        change_7d_bps = await self.db.get_stock_change_bps(days=7, guild_id=gid)
+
+        total_stocks = await self.db.get_total_stocks(guild_id=gid)
+        treasury = await self.db.get_treasury(guild_id=gid)
+        outstanding_bonds = await self.db.get_total_outstanding_bonds(guild_id=gid)
+        net_available = int(treasury) - int(outstanding_bonds)
+        notional_stock_value = int(total_stocks) * int(current)
+
+        def fmt_bps(bps: int) -> str:
+            sign = "+" if int(bps) >= 0 else ""
+            return f"{sign}{int(bps)/100:.2f}%"
+
+        embed = discord.Embed(
+            title="📈 Stock Market Stats",
+            colour=discord.Colour.from_rgb(32, 41, 74),
+        )
+        embed.set_thumbnail(url="attachment://org_logo.png")
+        embed.add_field(name="Current Price", value=f"`{current:,} aUEC`", inline=True)
+        embed.add_field(name="24h Change", value=f"`{fmt_bps(change_24h_bps)}`", inline=True)
+        embed.add_field(name="7d Change", value=f"`{fmt_bps(change_7d_bps)}`", inline=True)
+        embed.add_field(name="Total Stocks", value=f"`{int(total_stocks):,}`", inline=True)
+        embed.add_field(name="Stock Notional Value", value=f"`{int(notional_stock_value):,} aUEC`", inline=True)
+        embed.add_field(name="24h Net Flow", value=f"`{int(metrics.get('net_units_24h') or 0):,}` units", inline=True)
+        embed.add_field(name="Treasury", value=f"`{int(treasury):,} aUEC`", inline=True)
+        embed.add_field(name="Outstanding Bonds", value=f"`{int(outstanding_bonds):,} aUEC`", inline=True)
+        embed.add_field(name="Net Available", value=f"`{int(net_available):,} aUEC`", inline=True)
+
+        await ctx.followup.send(embed=embed, files=_logo_files(), ephemeral=True)
+
     @finance.command(name="reconcile", description="Compare treasury value against ledger-derived value")
     @finance_or_admin()
     async def reconcile(self, ctx: discord.ApplicationContext):

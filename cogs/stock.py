@@ -261,6 +261,35 @@ class StockCog(commands.Cog):
         await self.db.set_stock_price_state(guild_id=gid, current_price=int(bounded))
         await ctx.respond(f"Stock price set: `{old:,} -> {int(bounded):,} aUEC`.", ephemeral=True)
 
+    @stock.command(name="market", description="View stock market price and movement")
+    async def market(self, ctx: discord.ApplicationContext):
+        gid = (ctx.guild.id if ctx.guild else None)
+        cfg = await self.db.get_stock_market_config(guild_id=gid)
+        state = await self.db.get_stock_price_state(guild_id=gid)
+        metrics = await self.db.get_stock_trade_metrics(guild_id=gid)
+        current = int(state.get("current_price") or cfg.get("base_price") or DEFAULT_STOCK_PRICE)
+        open_24h = int(state.get("day_open_price") or current)
+        change_24h_bps = 0 if open_24h <= 0 else int(round(((current - open_24h) / open_24h) * 10000))
+        change_7d_bps = await self.db.get_stock_change_bps(days=7, guild_id=gid)
+
+        def fmt_bps(bps: int) -> str:
+            sign = "+" if int(bps) >= 0 else ""
+            return f"{sign}{int(bps)/100:.2f}%"
+
+        embed = discord.Embed(
+            title="📊 STOCK MARKET",
+            colour=discord.Colour.from_rgb(32, 41, 74),
+        )
+        embed.set_thumbnail(url="attachment://org_logo.png")
+        embed.add_field(name="Current Price", value=f"`{current:,} aUEC`", inline=True)
+        embed.add_field(name="24h Change", value=f"`{fmt_bps(change_24h_bps)}`", inline=True)
+        embed.add_field(name="7d Change", value=f"`{fmt_bps(change_7d_bps)}`", inline=True)
+        embed.add_field(name="24h Net Flow", value=f"`{int(metrics.get('net_units_24h') or 0):,}` units", inline=True)
+        embed.add_field(name="Floor / Ceiling", value=f"`{int(cfg.get('min_price') or 0):,}` / `{int(cfg.get('max_price') or 0):,}`", inline=True)
+        embed.add_field(name="Daily Move Cap", value=f"`{int(cfg.get('daily_move_cap_bps') or 0)/100:.2f}%`", inline=True)
+
+        await ctx.respond(embed=embed, files=_logo_files(), ephemeral=True)
+
     @stock.command(name="portfolio", description="View your stock holdings and account balance")
     async def portfolio(self, ctx: discord.ApplicationContext):
         gid = (ctx.guild.id if ctx.guild else None)
