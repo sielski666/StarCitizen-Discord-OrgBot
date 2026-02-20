@@ -227,6 +227,27 @@ class SetupCog(commands.Cog):
         except Exception:
             return None
 
+    async def _ensure_board_channels(self, guild: discord.Guild, jobs_board_channel_id: str, stock_board_channel_id: str, finance_board_channel_id: str) -> dict[str, str] | None:
+        async def ensure_one(channel_id: str, default_name: str) -> str:
+            by_name = discord.utils.get(guild.text_channels, name=default_name)
+            if by_name is not None:
+                return str(by_name.id)
+            if channel_id.isdigit():
+                ch = guild.get_channel(int(channel_id))
+                if ch is not None:
+                    return str(ch.id)
+            created = await guild.create_text_channel(default_name)
+            return str(created.id)
+
+        try:
+            return {
+                "jobs_board": await ensure_one(jobs_board_channel_id, "jobs-board"),
+                "stock_board": await ensure_one(stock_board_channel_id, "stock-board"),
+                "finance_board": await ensure_one(finance_board_channel_id, "finance-board"),
+            }
+        except Exception:
+            return None
+
     def _read_env(self) -> dict[str, str]:
         data: dict[str, str] = {}
         if not ENV_PATH.exists():
@@ -261,6 +282,9 @@ class SetupCog(commands.Cog):
             "STOCK_MAX_PRICE",
             "STOCK_DAILY_MOVE_CAP_BPS",
             "STOCK_DEMAND_SENSITIVITY_BPS",
+            "JOBS_BOARD_CHANNEL_ID",
+            "STOCK_BOARD_CHANNEL_ID",
+            "FINANCE_BOARD_CHANNEL_ID",
             "FINANCE_CHANNEL_ID",
         ]
 
@@ -364,6 +388,18 @@ class SetupCog(commands.Cog):
 
         area_map_value = ",".join(f"{k}:{v}" for k, v in area_map.items())
 
+        board_map = await self._ensure_board_channels(
+            guild,
+            env.get("JOBS_BOARD_CHANNEL_ID", ""),
+            env.get("STOCK_BOARD_CHANNEL_ID", ""),
+            env.get("FINANCE_BOARD_CHANNEL_ID", ""),
+        )
+        if board_map is None:
+            return await ctx.followup.send(
+                "Failed creating/validating board channels. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
         updates = {
             "GUILD_ID": env.get("GUILD_ID", "") or str(guild.id),
             "FINANCE_ROLE_ID": str(finance_role_id),
@@ -380,6 +416,9 @@ class SetupCog(commands.Cog):
             "STOCK_MAX_PRICE": env.get("STOCK_MAX_PRICE", "250000") or "250000",
             "STOCK_DAILY_MOVE_CAP_BPS": env.get("STOCK_DAILY_MOVE_CAP_BPS", "500") or "500",
             "STOCK_DEMAND_SENSITIVITY_BPS": env.get("STOCK_DEMAND_SENSITIVITY_BPS", "50") or "50",
+            "JOBS_BOARD_CHANNEL_ID": str(board_map["jobs_board"]),
+            "STOCK_BOARD_CHANNEL_ID": str(board_map["stock_board"]),
+            "FINANCE_BOARD_CHANNEL_ID": str(board_map["finance_board"]),
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": area_map_value,
         }
@@ -426,6 +465,9 @@ class SetupCog(commands.Cog):
             "STOCK_MAX_PRICE",
             "STOCK_DAILY_MOVE_CAP_BPS",
             "STOCK_DEMAND_SENSITIVITY_BPS",
+            "JOBS_BOARD_CHANNEL_ID",
+            "STOCK_BOARD_CHANNEL_ID",
+            "FINANCE_BOARD_CHANNEL_ID",
         ]
         missing = [k for k in required if not env.get(k)]
 
@@ -493,7 +535,7 @@ class SetupCog(commands.Cog):
             else:
                 checks_ok.append(f"{role_key} valid")
 
-        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID", "STOCK_SELL_CHANNEL_ID", "STOCK_MARKET_CHANNEL_ID"]
+        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID", "STOCK_SELL_CHANNEL_ID", "STOCK_MARKET_CHANNEL_ID", "JOBS_BOARD_CHANNEL_ID", "STOCK_BOARD_CHANNEL_ID", "FINANCE_BOARD_CHANNEL_ID"]
         for ck in channel_keys:
             cv = env.get(ck, "")
             if not cv or not cv.isdigit():
@@ -589,12 +631,27 @@ class SetupCog(commands.Cog):
                 ephemeral=True,
             )
 
+        board_map = await self._ensure_board_channels(
+            guild,
+            env.get("JOBS_BOARD_CHANNEL_ID", ""),
+            env.get("STOCK_BOARD_CHANNEL_ID", ""),
+            env.get("FINANCE_BOARD_CHANNEL_ID", ""),
+        )
+        if board_map is None:
+            return await ctx.respond(
+                "Failed creating board channels. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
         updates = {
             "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
             "STOCK_SELL_CHANNEL_ID": str(shares_id),
             "STOCK_MARKET_CHANNEL_ID": str(stock_market_id),
+            "JOBS_BOARD_CHANNEL_ID": str(board_map["jobs_board"]),
+            "STOCK_BOARD_CHANNEL_ID": str(board_map["stock_board"]),
+            "FINANCE_BOARD_CHANNEL_ID": str(board_map["finance_board"]),
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": ",".join(f"{k}:{v}" for k, v in area_map.items()),
         }
