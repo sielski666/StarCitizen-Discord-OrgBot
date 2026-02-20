@@ -15,6 +15,9 @@
 - `/jobs attend`
 - `/jobs unattend`
 - `/jobs attendees`
+- `/jobs crew_add`
+- `/jobs crew_remove`
+- `/jobs crew_list`
 - `/jobs attendance_sync`
 - `/jobs attendance_lock`
 - `/jobs attendance_unlock`

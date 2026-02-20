@@ -37,7 +37,7 @@
 
 **What it does:**
 - Marks job paid (idempotent-safe state transition first).
-- Non-event job: pays claimer.
+- Non-event job: pays claimer + optional crew split.
 - Event job: pays attendance snapshot split.
 - Adds rep and role-sync per payout target.
 - Releases escrow and writes ledger entries.
@@ -56,6 +56,24 @@
 
 **What it does:**
 - Reopens cancelled job to `open`.
+
+---
+
+## Crew commands (non-event jobs)
+
+### `/jobs crew_add job_id:<id> member:<member>`
+Adds a crew member to the job payout group.
+
+Rules:
+- Job must be `claimed` or `completed`
+- Non-event jobs only
+- Managed by claimer, jobs admin, finance, or admin
+
+### `/jobs crew_remove job_id:<id> member:<member>`
+Removes a crew member from the job payout group.
+
+### `/jobs crew_list job_id:<id>`
+Shows current payout group (claimer + crew).
 
 ---
 
