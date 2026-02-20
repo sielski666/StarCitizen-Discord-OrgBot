@@ -21,7 +21,7 @@ A Discord bot for managing org jobs, payouts, treasury, rep/levels, and account 
   - Complete, payout, cancel, and reopen jobs
 - **Account flow**
   - User account overview
-  - Buy/sell shares
+  - Buy/sell stocks
   - Cashout request flow with persistent approve/reject handling
   - Role/level sync utilities
 - **Finance tools**

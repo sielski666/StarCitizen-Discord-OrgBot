@@ -110,7 +110,7 @@ class FinanceCog(commands.Cog):
 
             payout = int(shares) * int(SHARE_CASHOUT_AUEC_PER_SHARE)
             embed.add_field(
-                name=f"#{rid} • {status.upper()} • {int(shares):,} share(s)",
+                name=f"#{rid} • {status.upper()} • {int(shares):,} stock(s)",
                 value=(
                     f"Requester: <@{int(requester_id)}>\n"
                     f"Est payout: `{payout:,} aUEC`\n"
@@ -195,7 +195,7 @@ class FinanceCog(commands.Cog):
         embed.set_thumbnail(url="attachment://org_logo.png")
 
         embed.add_field(name="Requester", value=f"<@{int(requester_id)}>", inline=True)
-        embed.add_field(name="Shares", value=f"`{int(shares):,}`", inline=True)
+        embed.add_field(name="Stocks", value=f"`{int(shares):,}`", inline=True)
         embed.add_field(name="Est payout", value=f"`{payout:,} aUEC`", inline=True)
 
         embed.add_field(name="Status", value=f"`{str(status).upper()}`", inline=True)
@@ -238,7 +238,7 @@ class FinanceCog(commands.Cog):
             if int(amount) != 0:
                 bits.append(f"amt `{int(amount):,}`")
             if int(shares_delta) != 0:
-                bits.append(f"shares `{int(shares_delta):,}`")
+                bits.append(f"stocks `{int(shares_delta):,}`")
             if int(rep_delta) != 0:
                 bits.append(f"rep `{int(rep_delta):,}`")
 

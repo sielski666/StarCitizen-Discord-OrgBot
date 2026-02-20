@@ -157,6 +157,7 @@ class StockCog(commands.Cog):
             colour=discord.Colour.green(),
         )
         embed.set_thumbnail(url="attachment://org_logo.png")
+        embed.add_field(name="Migration Notice", value="Stock system is now live and replaces legacy share command flow.", inline=False)
         await ctx.respond(embed=embed, files=_logo_files(), ephemeral=True)
 
     @stock.command(name="sell", description="Request to cash-out by selling stocks (locks stocks until handled)")
@@ -229,7 +230,8 @@ class StockCog(commands.Cog):
 
         await ctx.followup.send(
             f"Cash-out request **#{request_id}** created. Your `{int(stocks):,}` stocks are now **locked** until handled.\n"
-            f"Estimated payout: `{payout_amount:,} aUEC`{warn}",
+            f"Estimated payout: `{payout_amount:,} aUEC`{warn}\n\n"
+            "Migration Notice: Stock system is now live and legacy share commands have been retired.",
             ephemeral=True,
         )
 
