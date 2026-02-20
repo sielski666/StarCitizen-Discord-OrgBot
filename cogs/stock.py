@@ -282,9 +282,9 @@ class StockCog(commands.Cog):
         )
         embed.set_thumbnail(url="attachment://org_logo.png")
         embed.add_field(name="Current Price", value=f"`{current:,} aUEC`", inline=True)
-        embed.add_field(name="24h Change", value=f"`{fmt_bps(change_24h_bps)}`", inline=True)
-        embed.add_field(name="7d Change", value=f"`{fmt_bps(change_7d_bps)}`", inline=True)
-        embed.add_field(name="24h Net Flow", value=f"`{int(metrics.get('net_units_24h') or 0):,}` units", inline=True)
+        embed.add_field(name="Change (since open)", value=f"`{fmt_bps(change_24h_bps)}`", inline=True)
+        embed.add_field(name="7d Trend", value=f"`{fmt_bps(change_7d_bps)}`", inline=True)
+        embed.add_field(name="Net Flow (since reset)", value=f"`{int(metrics.get('net_units_24h') or 0):,}` units", inline=True)
         embed.add_field(name="Floor / Ceiling", value=f"`{int(cfg.get('min_price') or 0):,}` / `{int(cfg.get('max_price') or 0):,}`", inline=True)
         embed.add_field(name="Daily Move Cap", value=f"`{int(cfg.get('daily_move_cap_bps') or 0)/100:.2f}%`", inline=True)
 

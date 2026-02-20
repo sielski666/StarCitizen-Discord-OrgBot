@@ -759,10 +759,15 @@ class Database:
         return max(0, int(total) - int(locked))
 
     async def buy_shares(self, discord_id: int, shares_delta: int, cost: int, reference: str | None = None, guild_id: int | None = None):
+        if int(shares_delta) <= 0:
+            raise ValueError("Stock quantity must be greater than zero.")
+        if int(cost) <= 0:
+            raise ValueError("Stock purchase cost must be greater than zero.")
+
         await self.ensure_member(discord_id, guild_id=guild_id)
         bal = await self.get_balance(discord_id, guild_id=guild_id)
         if bal < int(cost):
-            raise ValueError("Not enough Org Credits to buy shares.")
+            raise ValueError("Not enough Org Credits to buy stocks.")
         await self._begin()
         try:
             if guild_id is None:
@@ -1745,6 +1750,9 @@ class Database:
     # SHARES ESCROW (CASHOUT)
     # =========================
     async def lock_shares(self, discord_id: int, shares: int, guild_id: int | None = None):
+        if int(shares) <= 0:
+            raise ValueError("Stock quantity must be greater than zero.")
+
         await self.ensure_member(discord_id, guild_id=guild_id)
         available = await self.get_shares_available(discord_id, guild_id=guild_id)
         if available < int(shares):
