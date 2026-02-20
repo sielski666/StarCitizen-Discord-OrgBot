@@ -533,6 +533,36 @@ class SetupCog(commands.Cog):
         self._write_env(updates)
         await self._persist_guild_updates(guild.id, updates)
 
+        jobs_ch, jobs_msg = await self._upsert_board_message(
+            guild,
+            updates.get("JOBS_BOARD_CHANNEL_ID", ""),
+            updates.get("JOBS_BOARD_MESSAGE_ID", ""),
+            "jobs",
+        )
+        stock_ch, stock_msg = await self._upsert_board_message(
+            guild,
+            updates.get("STOCK_BOARD_CHANNEL_ID", ""),
+            updates.get("STOCK_BOARD_MESSAGE_ID", ""),
+            "stock",
+        )
+        fin_ch, fin_msg = await self._upsert_board_message(
+            guild,
+            updates.get("FINANCE_BOARD_CHANNEL_ID", ""),
+            updates.get("FINANCE_BOARD_MESSAGE_ID", ""),
+            "finance",
+        )
+        board_updates = {
+            "JOBS_BOARD_CHANNEL_ID": jobs_ch or updates.get("JOBS_BOARD_CHANNEL_ID", ""),
+            "STOCK_BOARD_CHANNEL_ID": stock_ch or updates.get("STOCK_BOARD_CHANNEL_ID", ""),
+            "FINANCE_BOARD_CHANNEL_ID": fin_ch or updates.get("FINANCE_BOARD_CHANNEL_ID", ""),
+            "JOBS_BOARD_MESSAGE_ID": jobs_msg or updates.get("JOBS_BOARD_MESSAGE_ID", ""),
+            "STOCK_BOARD_MESSAGE_ID": stock_msg or updates.get("STOCK_BOARD_MESSAGE_ID", ""),
+            "FINANCE_BOARD_MESSAGE_ID": fin_msg or updates.get("FINANCE_BOARD_MESSAGE_ID", ""),
+        }
+        self._write_env(board_updates)
+        await self._persist_guild_updates(guild.id, board_updates)
+        updates.update(board_updates)
+
         msg = (
             "✅ Setup synced from .env and guild context\n"
             f"Guild: `{updates['GUILD_ID']}`\n"
@@ -697,57 +727,6 @@ class SetupCog(commands.Cog):
 
         await ctx.respond(text, ephemeral=True)
 
-    @setup_group.command(name="deployboards", description="Create or refresh board messages in board channels")
-    async def setup_deploy_boards(self, ctx: discord.ApplicationContext):
-        member = ctx.author if isinstance(ctx.author, discord.Member) else None
-        if not member or not is_admin_member(member):
-            return await ctx.respond("Admin only.", ephemeral=True)
-
-        guild = ctx.guild
-        if guild is None:
-            return await ctx.respond("Guild context required.", ephemeral=True)
-
-        await ctx.defer(ephemeral=True)
-        env = await self._get_effective_config(guild.id)
-
-        jobs_ch, jobs_msg = await self._upsert_board_message(
-            guild,
-            env.get("JOBS_BOARD_CHANNEL_ID", ""),
-            env.get("JOBS_BOARD_MESSAGE_ID", ""),
-            "jobs",
-        )
-        stock_ch, stock_msg = await self._upsert_board_message(
-            guild,
-            env.get("STOCK_BOARD_CHANNEL_ID", ""),
-            env.get("STOCK_BOARD_MESSAGE_ID", ""),
-            "stock",
-        )
-        fin_ch, fin_msg = await self._upsert_board_message(
-            guild,
-            env.get("FINANCE_BOARD_CHANNEL_ID", ""),
-            env.get("FINANCE_BOARD_MESSAGE_ID", ""),
-            "finance",
-        )
-
-        updates = {
-            "JOBS_BOARD_CHANNEL_ID": jobs_ch or env.get("JOBS_BOARD_CHANNEL_ID", ""),
-            "STOCK_BOARD_CHANNEL_ID": stock_ch or env.get("STOCK_BOARD_CHANNEL_ID", ""),
-            "FINANCE_BOARD_CHANNEL_ID": fin_ch or env.get("FINANCE_BOARD_CHANNEL_ID", ""),
-            "JOBS_BOARD_MESSAGE_ID": jobs_msg or env.get("JOBS_BOARD_MESSAGE_ID", ""),
-            "STOCK_BOARD_MESSAGE_ID": stock_msg or env.get("STOCK_BOARD_MESSAGE_ID", ""),
-            "FINANCE_BOARD_MESSAGE_ID": fin_msg or env.get("FINANCE_BOARD_MESSAGE_ID", ""),
-        }
-        self._write_env(updates)
-        await self._persist_guild_updates(guild.id, updates)
-
-        await ctx.followup.send(
-            "✅ Board messages deployed/refreshed\n"
-            f"Jobs Board: <#{updates['JOBS_BOARD_CHANNEL_ID']}> (msg `{updates['JOBS_BOARD_MESSAGE_ID'] or 'missing'}`)\n"
-            f"Stock Board: <#{updates['STOCK_BOARD_CHANNEL_ID']}> (msg `{updates['STOCK_BOARD_MESSAGE_ID'] or 'missing'}`)\n"
-            f"Finance Board: <#{updates['FINANCE_BOARD_CHANNEL_ID']}> (msg `{updates['FINANCE_BOARD_MESSAGE_ID'] or 'missing'}`)",
-            ephemeral=True,
-        )
-
     @setup_group.command(name="createchannels", description="Create missing treasury/stocks + job-area channels")
     async def setup_create_channels(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
@@ -819,6 +798,36 @@ class SetupCog(commands.Cog):
         }
         self._write_env(updates)
         await self._persist_guild_updates(guild.id, updates)
+
+        jobs_ch, jobs_msg = await self._upsert_board_message(
+            guild,
+            updates.get("JOBS_BOARD_CHANNEL_ID", ""),
+            updates.get("JOBS_BOARD_MESSAGE_ID", ""),
+            "jobs",
+        )
+        stock_ch, stock_msg = await self._upsert_board_message(
+            guild,
+            updates.get("STOCK_BOARD_CHANNEL_ID", ""),
+            updates.get("STOCK_BOARD_MESSAGE_ID", ""),
+            "stock",
+        )
+        fin_ch, fin_msg = await self._upsert_board_message(
+            guild,
+            updates.get("FINANCE_BOARD_CHANNEL_ID", ""),
+            updates.get("FINANCE_BOARD_MESSAGE_ID", ""),
+            "finance",
+        )
+        board_updates = {
+            "JOBS_BOARD_CHANNEL_ID": jobs_ch or updates.get("JOBS_BOARD_CHANNEL_ID", ""),
+            "STOCK_BOARD_CHANNEL_ID": stock_ch or updates.get("STOCK_BOARD_CHANNEL_ID", ""),
+            "FINANCE_BOARD_CHANNEL_ID": fin_ch or updates.get("FINANCE_BOARD_CHANNEL_ID", ""),
+            "JOBS_BOARD_MESSAGE_ID": jobs_msg or updates.get("JOBS_BOARD_MESSAGE_ID", ""),
+            "STOCK_BOARD_MESSAGE_ID": stock_msg or updates.get("STOCK_BOARD_MESSAGE_ID", ""),
+            "FINANCE_BOARD_MESSAGE_ID": fin_msg or updates.get("FINANCE_BOARD_MESSAGE_ID", ""),
+        }
+        self._write_env(board_updates)
+        await self._persist_guild_updates(guild.id, board_updates)
+        updates.update(board_updates)
 
         await ctx.respond(
             "✅ Channels ready\n"
