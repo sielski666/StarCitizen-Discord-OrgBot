@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS payout_bonds (
   redeemed_at TEXT,
   job_reference TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_payout_bonds_guild_status_created ON payout_bonds(guild_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_payout_bonds_user_status_created ON payout_bonds(user_id, status, created_at);
 
 -- Simple transaction log (for balance + shares + rep deltas)
 CREATE TABLE IF NOT EXISTS transactions (
@@ -1212,6 +1214,78 @@ class Database:
         targets = [(int(claimed_by), int(reward))] if claimed_by and reward > 0 else []
         result = await self.settle_job_payout(int(job_id), targets, confirmed_by=None, guild_id=None)
         return bool(result.get("ok"))
+
+    # =========================
+    # PAYOUT BONDS
+    # =========================
+    async def create_payout_bond(
+        self,
+        user_id: int,
+        amount_owed: int,
+        guild_id: int | None = None,
+        org_id: str | None = None,
+        job_reference: str | None = None,
+    ) -> int:
+        amount_i = int(amount_owed)
+        if amount_i <= 0:
+            raise ValueError("Bond amount must be positive.")
+
+        cur = await self.conn.execute(
+            """
+            INSERT INTO payout_bonds(guild_id, org_id, user_id, amount_owed, status, job_reference)
+            VALUES(?, ?, ?, ?, 'pending', ?)
+            """,
+            (
+                int(guild_id) if guild_id is not None else 0,
+                str(org_id) if org_id is not None else None,
+                int(user_id),
+                amount_i,
+                str(job_reference) if job_reference is not None else None,
+            ),
+        )
+        await self.conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_pending_bonds(
+        self,
+        user_id: int,
+        guild_id: int | None = None,
+        limit: int = 100,
+    ) -> list[tuple[int, int, int, str, str | None]]:
+        """Returns pending bonds FIFO as tuples: (bond_id, user_id, amount_owed, created_at, job_reference)."""
+        lim = max(1, min(int(limit), 1000))
+        cur = await self.conn.execute(
+            """
+            SELECT bond_id, user_id, amount_owed, created_at, job_reference
+            FROM payout_bonds
+            WHERE user_id=? AND guild_id=? AND status='pending'
+            ORDER BY datetime(created_at) ASC, bond_id ASC
+            LIMIT ?
+            """,
+            (int(user_id), int(guild_id) if guild_id is not None else 0, lim),
+        )
+        rows = await cur.fetchall()
+        return [(int(r[0]), int(r[1]), int(r[2]), str(r[3]), (str(r[4]) if r[4] is not None else None)) for r in rows]
+
+    async def get_total_outstanding_bonds(self, guild_id: int | None = None) -> int:
+        cur = await self.conn.execute(
+            "SELECT COALESCE(SUM(amount_owed), 0) FROM payout_bonds WHERE guild_id=? AND status='pending'",
+            (int(guild_id) if guild_id is not None else 0,),
+        )
+        row = await cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    async def mark_bond_redeemed(self, bond_id: int, guild_id: int | None = None) -> bool:
+        cur = await self.conn.execute(
+            """
+            UPDATE payout_bonds
+            SET status='redeemed', redeemed_at=datetime('now')
+            WHERE bond_id=? AND guild_id=? AND status='pending'
+            """,
+            (int(bond_id), int(guild_id) if guild_id is not None else 0),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
 
     async def cancel_job(self, job_id: int) -> bool:
         await self._begin()
