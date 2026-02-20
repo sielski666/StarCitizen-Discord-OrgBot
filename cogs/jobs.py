@@ -626,6 +626,86 @@ class JobTemplateModal(discord.ui.Modal):
         await interaction.response.send_message(f"Template `{name}` saved (id `{template_id}`).", ephemeral=True)
 
 
+
+class CrewMemberModal(discord.ui.Modal):
+    def __init__(self, db: Database, job_id: int, mode: str):
+        self.db = db
+        self.job_id = int(job_id)
+        self.mode = str(mode)
+        title = "Add Crew Member" if self.mode == "add" else "Remove Crew Member"
+        super().__init__(title=title)
+        self.member_id = discord.ui.InputText(label="Member ID", placeholder="Discord user ID", max_length=24)
+        self.add_item(self.member_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        author = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if author is None:
+            return await interaction.response.send_message("Member context required.", ephemeral=True)
+
+        raw_member = (self.member_id.value or "").strip()
+        if not raw_member.isdigit():
+            return await interaction.response.send_message("Member ID must be numeric.", ephemeral=True)
+        target_id = int(raw_member)
+
+        row = await self.db.get_job(int(self.job_id), guild_id=(interaction.guild.id if interaction.guild else None))
+        if not row:
+            return await interaction.response.send_message("Job not found.", ephemeral=True)
+
+        status = str(row[6])
+        claimed_by = int(row[8]) if row[8] is not None else None
+        is_manager = (claimed_by is not None and int(author.id) == int(claimed_by)) or is_admin_member(author) or is_jobs_admin(author) or is_finance(author)
+        if not is_manager:
+            return await interaction.response.send_message("Only claimer, Jobs Admin, Finance, or Admin can manage crew.", ephemeral=True)
+        if status not in ("claimed", "completed"):
+            return await interaction.response.send_message("Crew can only be edited when job is CLAIMED/COMPLETED.", ephemeral=True)
+
+        if self.mode == "add":
+            if claimed_by is not None and int(target_id) == int(claimed_by):
+                return await interaction.response.send_message("Claimer is already part of payout group.", ephemeral=True)
+            member_obj = interaction.guild.get_member(target_id) if interaction.guild else None
+            if member_obj is not None and member_obj.bot:
+                return await interaction.response.send_message("Bots cannot be added as crew members.", ephemeral=True)
+            added = await self.db.add_job_crew_member(int(self.job_id), int(target_id), added_by=int(author.id), guild_id=(interaction.guild.id if interaction.guild else None))
+            if not added:
+                return await interaction.response.send_message("Member already in crew list or job not editable.", ephemeral=True)
+            crew = await self.db.list_job_crew(int(self.job_id), guild_id=(interaction.guild.id if interaction.guild else None))
+            return await interaction.response.send_message(f"Added <@{target_id}> to Job #{int(self.job_id)} crew. Crew count: `{len(crew)}`.", ephemeral=True)
+
+        removed = await self.db.remove_job_crew_member(int(self.job_id), int(target_id), guild_id=(interaction.guild.id if interaction.guild else None))
+        if not removed:
+            return await interaction.response.send_message("Member is not in the crew list.", ephemeral=True)
+        crew = await self.db.list_job_crew(int(self.job_id), guild_id=(interaction.guild.id if interaction.guild else None))
+        return await interaction.response.send_message(f"Removed <@{target_id}> from Job #{int(self.job_id)} crew. Crew count: `{len(crew)}`.", ephemeral=True)
+
+
+class CrewQuickView(discord.ui.View):
+    def __init__(self, db: Database, job_id: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.job_id = int(job_id)
+
+    @discord.ui.button(label="Add Crew", style=discord.ButtonStyle.primary)
+    async def add_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_modal(CrewMemberModal(self.db, self.job_id, "add"))
+
+    @discord.ui.button(label="Remove Crew", style=discord.ButtonStyle.danger)
+    async def remove_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_modal(CrewMemberModal(self.db, self.job_id, "remove"))
+
+    @discord.ui.button(label="View Crew", style=discord.ButtonStyle.secondary)
+    async def list_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
+        row = await self.db.get_job(int(self.job_id), guild_id=(interaction.guild.id if interaction.guild else None))
+        if not row:
+            return await interaction.response.send_message("Job not found.", ephemeral=True)
+        claimed_by = int(row[8]) if row[8] is not None else None
+        crew = await self.db.list_job_crew(int(self.job_id), guild_id=(interaction.guild.id if interaction.guild else None))
+        lines = []
+        if claimed_by:
+            lines.append(f"Claimer: <@{int(claimed_by)}>")
+        lines.append("Crew: " + (", ".join(f"<@{int(uid)}>" for uid in crew[:30]) if crew else "none"))
+        await interaction.response.send_message(f"Job #{int(self.job_id)} payout group:\n" + "\n".join(lines), ephemeral=True)
+
+
 class JobWorkflowView(discord.ui.View):
     """Three-stage job workflow via buttons: Accept -> Complete -> Confirm."""
 
@@ -636,23 +716,28 @@ class JobWorkflowView(discord.ui.View):
 
         if self.is_event:
             self.remove_item(self.accept_btn)
+            self.remove_item(self.crew_btn)
 
         if status == "open":
             self.complete_btn.disabled = True
             self.confirm_btn.disabled = True
+            self.crew_btn.disabled = True
             if self.is_event:
                 self.remove_item(self.complete_btn)
                 self.remove_item(self.confirm_btn)
         elif status == "claimed":
             self.accept_btn.disabled = True
             self.confirm_btn.disabled = True
+            self.crew_btn.disabled = False
         elif status == "completed":
             self.accept_btn.disabled = True
             self.complete_btn.disabled = True
+            self.crew_btn.disabled = False
         else:  # paid/cancelled/other terminal
             self.accept_btn.disabled = True
             self.complete_btn.disabled = True
             self.confirm_btn.disabled = True
+            self.crew_btn.disabled = True
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.success, custom_id="job_accept")
     async def accept_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -741,6 +826,29 @@ class JobWorkflowView(discord.ui.View):
             logger.debug("Failed to post thread control card for job=%s", job_id_db, exc_info=True)
 
         await interaction.followup.send("Accepted. Thread created.", ephemeral=True)
+
+    @discord.ui.button(label="Crew", style=discord.ButtonStyle.secondary, custom_id="job_crew_manage", row=1)
+    async def crew_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if not interaction.message or not interaction.message.embeds:
+            return await interaction.response.send_message("Missing job embed context.", ephemeral=True)
+
+        jid = _extract_job_id_from_message(interaction.message)
+        if not jid:
+            return await interaction.response.send_message("Could not read Job ID from message.", ephemeral=True)
+
+        row = await self.db.get_job(int(jid), guild_id=(interaction.guild.id if interaction.guild else None))
+        if not row:
+            return await interaction.response.send_message("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(jid))
+        if str(category or "").strip().lower() == "event":
+            return await interaction.response.send_message("Event jobs use attendance, not crew controls.", ephemeral=True)
+
+        status = str(row[6])
+        if status not in ("claimed", "completed"):
+            return await interaction.response.send_message("Crew controls are available after a job is accepted.", ephemeral=True)
+
+        await interaction.response.send_message("Crew controls", view=CrewQuickView(self.db, int(jid)), ephemeral=True)
 
     @discord.ui.button(label="Complete", style=discord.ButtonStyle.primary, custom_id="job_complete")
     async def complete_btn(self, button: discord.ui.Button, interaction: discord.Interaction):
