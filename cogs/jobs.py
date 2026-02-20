@@ -867,7 +867,21 @@ class JobWorkflowView(discord.ui.View):
         else:
             if not claimed_by:
                 return await interaction.followup.send("No claimer to reward.", ephemeral=True)
-            payout_targets.append((int(claimed_by), int(reward)))
+            crew_ids = await self.db.list_job_crew(int(job_id_db), guild_id=(interaction.guild.id if interaction.guild else None))
+            participants: list[int] = [int(claimed_by)]
+            for uid in crew_ids:
+                if int(uid) not in participants:
+                    participants.append(int(uid))
+
+            if len(participants) <= 1:
+                payout_targets.append((int(claimed_by), int(reward)))
+            else:
+                base = int(reward) // len(participants)
+                remainder = int(reward) % len(participants)
+                for i, uid in enumerate(participants):
+                    amt = int(base) + (1 if i < remainder else 0)
+                    if amt > 0:
+                        payout_targets.append((int(uid), int(amt)))
 
         settlement = await self.db.settle_job_payout(
             int(job_id_db),
@@ -1417,6 +1431,88 @@ class JobsCog(commands.Cog):
         mentions = [f"<@{int(a[0])}>" for a in attendees[:50]]
         await ctx.respond(f"Event attendees for Job #{int(job_id)}:\n" + "\n".join(mentions), ephemeral=True)
 
+    @jobs.command(name="crew_add", description="Add a crew member to a claimed/completed non-event job")
+    async def crew_add(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1), member: discord.Member):
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id))
+        if category == "event":
+            return await ctx.respond("Event jobs use attendance, not crew add.", ephemeral=True)
+
+        status = str(row[6])
+        claimed_by = int(row[8]) if row[8] is not None else None
+        if status not in ("claimed", "completed"):
+            return await ctx.respond(f"Crew can only be edited when job is CLAIMED/COMPLETED (status: {_status_text(status)}).", ephemeral=True)
+
+        author = ctx.author if isinstance(ctx.author, discord.Member) else None
+        if author is None:
+            return await ctx.respond("Member context required.", ephemeral=True)
+        is_manager = (claimed_by is not None and int(author.id) == int(claimed_by)) or is_admin_member(author) or is_jobs_admin(author) or is_finance(author)
+        if not is_manager:
+            return await ctx.respond("Only the claimer, Jobs Admin, Finance, or Admin can manage crew.", ephemeral=True)
+
+        if claimed_by is not None and int(member.id) == int(claimed_by):
+            return await ctx.respond("Claimer is already part of payout group.", ephemeral=True)
+        if member.bot:
+            return await ctx.respond("Bots cannot be added as crew members.", ephemeral=True)
+
+        added = await self.db.add_job_crew_member(int(job_id), int(member.id), added_by=int(author.id), guild_id=(ctx.guild.id if ctx.guild else None))
+        if not added:
+            return await ctx.respond("Member already in crew list or job not editable.", ephemeral=True)
+
+        crew = await self.db.list_job_crew(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
+        await ctx.respond(f"Added {member.mention} to Job #{int(job_id)} crew. Crew count: `{len(crew)}`.", ephemeral=True)
+
+    @jobs.command(name="crew_remove", description="Remove a crew member from a non-event job")
+    async def crew_remove(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1), member: discord.Member):
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id))
+        if category == "event":
+            return await ctx.respond("Event jobs use attendance, not crew list.", ephemeral=True)
+
+        status = str(row[6])
+        claimed_by = int(row[8]) if row[8] is not None else None
+        author = ctx.author if isinstance(ctx.author, discord.Member) else None
+        if author is None:
+            return await ctx.respond("Member context required.", ephemeral=True)
+        is_manager = (claimed_by is not None and int(author.id) == int(claimed_by)) or is_admin_member(author) or is_jobs_admin(author) or is_finance(author)
+        if not is_manager:
+            return await ctx.respond("Only the claimer, Jobs Admin, Finance, or Admin can manage crew.", ephemeral=True)
+
+        if status not in ("claimed", "completed"):
+            return await ctx.respond(f"Crew can only be edited when job is CLAIMED/COMPLETED (status: {_status_text(status)}).", ephemeral=True)
+
+        removed = await self.db.remove_job_crew_member(int(job_id), int(member.id), guild_id=(ctx.guild.id if ctx.guild else None))
+        if not removed:
+            return await ctx.respond("Member is not in the crew list.", ephemeral=True)
+
+        crew = await self.db.list_job_crew(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
+        await ctx.respond(f"Removed {member.mention} from Job #{int(job_id)} crew. Crew count: `{len(crew)}`.", ephemeral=True)
+
+    @jobs.command(name="crew_list", description="Show payout crew for a non-event job")
+    async def crew_list(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
+        row = await self.db.get_job(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
+        if not row:
+            return await ctx.respond("Job not found.", ephemeral=True)
+
+        category = await self.db.get_job_category(int(job_id))
+        if category == "event":
+            return await ctx.respond("Event jobs use attendance list instead.", ephemeral=True)
+
+        claimed_by = int(row[8]) if row[8] is not None else None
+        crew = await self.db.list_job_crew(int(job_id), guild_id=(ctx.guild.id if ctx.guild else None))
+
+        lines = []
+        if claimed_by:
+            lines.append(f"Claimer: <@{int(claimed_by)}>")
+        lines.append("Crew: " + (", ".join(f"<@{int(uid)}>" for uid in crew[:30]) if crew else "none"))
+        await ctx.respond(f"Job #{int(job_id)} payout group:\n" + "\n".join(lines), ephemeral=True)
+
     @jobs.command(name="attendance_lock", description="(Finance/Admin) Lock event attendance list")
     @finance_or_admin()
     async def attendance_lock(self, ctx: discord.ApplicationContext, job_id: discord.Option(int, min_value=1)):
@@ -1685,7 +1781,21 @@ class JobsCog(commands.Cog):
         else:
             if not claimed_by:
                 return await ctx.respond("No claimer to reward.", ephemeral=True)
-            payout_targets.append((int(claimed_by), int(reward)))
+            crew_ids = await self.db.list_job_crew(int(jid), guild_id=(ctx.guild.id if ctx.guild else None))
+            participants: list[int] = [int(claimed_by)]
+            for uid in crew_ids:
+                if int(uid) not in participants:
+                    participants.append(int(uid))
+
+            if len(participants) <= 1:
+                payout_targets.append((int(claimed_by), int(reward)))
+            else:
+                base = int(reward) // len(participants)
+                remainder = int(reward) % len(participants)
+                for i, uid in enumerate(participants):
+                    amt = int(base) + (1 if i < remainder else 0)
+                    if amt > 0:
+                        payout_targets.append((int(uid), int(amt)))
 
         settlement = await self.db.settle_job_payout(
             int(jid),

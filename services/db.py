@@ -226,6 +226,16 @@ CREATE TABLE IF NOT EXISTS job_event_attendance (
   PRIMARY KEY (job_id, discord_id)
 );
 
+CREATE TABLE IF NOT EXISTS job_crew (
+  job_id INTEGER NOT NULL,
+  guild_id INTEGER NOT NULL DEFAULT 0,
+  user_id INTEGER NOT NULL,
+  added_by INTEGER,
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (job_id, guild_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_job_crew_job ON job_crew(job_id, guild_id, added_at);
+
 CREATE TABLE IF NOT EXISTS job_event_links (
   event_id INTEGER PRIMARY KEY,
   job_id INTEGER NOT NULL UNIQUE,
@@ -1123,6 +1133,50 @@ class Database:
             (int(job_id),),
         )
         return await cur.fetchall()
+
+    async def add_job_crew_member(self, job_id: int, user_id: int, added_by: int | None = None, guild_id: int | None = None) -> bool:
+        gid = int(guild_id) if guild_id is not None else 0
+        # Crew additions are valid only while job is active/awaiting payment.
+        jcur = await self.conn.execute("SELECT status FROM jobs WHERE job_id=?", (int(job_id),))
+        jrow = await jcur.fetchone()
+        if not jrow:
+            return False
+        status = str(jrow[0] or "")
+        if status not in ("claimed", "completed"):
+            return False
+
+        cur = await self.conn.execute(
+            "INSERT OR IGNORE INTO job_crew(job_id, guild_id, user_id, added_by) VALUES(?,?,?,?)",
+            (int(job_id), gid, int(user_id), int(added_by) if added_by is not None else None),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def remove_job_crew_member(self, job_id: int, user_id: int, guild_id: int | None = None) -> bool:
+        gid = int(guild_id) if guild_id is not None else 0
+        cur = await self.conn.execute(
+            "DELETE FROM job_crew WHERE job_id=? AND guild_id=? AND user_id=?",
+            (int(job_id), gid, int(user_id)),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def list_job_crew(self, job_id: int, guild_id: int | None = None) -> list[int]:
+        gid = int(guild_id) if guild_id is not None else 0
+        cur = await self.conn.execute(
+            "SELECT user_id FROM job_crew WHERE job_id=? AND guild_id=? ORDER BY datetime(added_at) ASC, user_id ASC",
+            (int(job_id), gid),
+        )
+        rows = await cur.fetchall()
+        return [int(r[0]) for r in rows]
+
+    async def clear_job_crew(self, job_id: int, guild_id: int | None = None):
+        gid = int(guild_id) if guild_id is not None else 0
+        await self.conn.execute(
+            "DELETE FROM job_crew WHERE job_id=? AND guild_id=?",
+            (int(job_id), gid),
+        )
+        await self.conn.commit()
 
     async def link_event_job(self, event_id: int, job_id: int):
         await self.conn.execute(
