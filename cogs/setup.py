@@ -180,16 +180,18 @@ class SetupCog(commands.Cog):
         self.bot = bot
         self.db = getattr(bot, "db", None)
 
-        # Persistent board views
-        if not hasattr(bot, "jobs_board_view"):
-            bot.jobs_board_view = JobsBoardView()  # type: ignore
-            bot.add_view(bot.jobs_board_view)  # type: ignore
-        if not hasattr(bot, "stock_board_view"):
-            bot.stock_board_view = StockBoardView()  # type: ignore
-            bot.add_view(bot.stock_board_view)  # type: ignore
-        if not hasattr(bot, "finance_board_view"):
-            bot.finance_board_view = FinanceBoardView()  # type: ignore
-            bot.add_view(bot.finance_board_view)  # type: ignore
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Register persistent board views only when an event loop is active.
+        if not hasattr(self.bot, "jobs_board_view"):
+            self.bot.jobs_board_view = JobsBoardView()  # type: ignore
+            self.bot.add_view(self.bot.jobs_board_view)  # type: ignore
+        if not hasattr(self.bot, "stock_board_view"):
+            self.bot.stock_board_view = StockBoardView()  # type: ignore
+            self.bot.add_view(self.bot.stock_board_view)  # type: ignore
+        if not hasattr(self.bot, "finance_board_view"):
+            self.bot.finance_board_view = FinanceBoardView()  # type: ignore
+            self.bot.add_view(self.bot.finance_board_view)  # type: ignore
 
     setup_group = discord.SlashCommandGroup("setup", "Server setup and config helpers")
 
