@@ -6,8 +6,8 @@ from discord.ext import commands
 from services.db import Database
 
 ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
-STOCK_PRICE = 100_000
-STOCK_CASHOUT_AUEC_PER_STOCK = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(STOCK_PRICE)) or STOCK_PRICE)
+DEFAULT_STOCK_PRICE = 100_000
+STOCK_CASHOUT_AUEC_PER_STOCK = int(os.getenv("SHARE_CASHOUT_AUEC_PER_SHARE", str(DEFAULT_STOCK_PRICE)) or DEFAULT_STOCK_PRICE)
 FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
 SHARES_SELL_CHANNEL_ID = int(os.getenv("SHARES_SELL_CHANNEL_ID", "0") or "0")
 
@@ -30,6 +30,18 @@ class StockCog(commands.Cog):
 
     stock = discord.SlashCommandGroup("stock", "Stock market commands")
 
+
+    async def _get_live_stock_price(self, guild_id: int | None = None) -> int:
+        state = await self.db.get_stock_price_state(guild_id=guild_id)
+        price = int(state.get("current_price") or 0)
+        if price > 0:
+            return int(price)
+
+        cfg = await self.db.get_stock_market_config(guild_id=guild_id)
+        base = int(cfg.get("base_price") or DEFAULT_STOCK_PRICE)
+        await self.db.set_stock_price_state(guild_id=guild_id, current_price=int(base), day_open_price=int(base), day_high_price=int(base), day_low_price=int(base))
+        return int(base)
+
     @staticmethod
     def _cashout_embed(request_id: int, requester_id: int, stocks: int, status: str) -> discord.Embed:
         e = discord.Embed(
@@ -51,7 +63,8 @@ class StockCog(commands.Cog):
         if stocks < 1:
             return await ctx.respond("Stocks must be at least 1.", ephemeral=True)
 
-        cost = int(stocks) * int(STOCK_PRICE)
+        live_price = await self._get_live_stock_price(guild_id=(ctx.guild.id if ctx.guild else None))
+        cost = int(stocks) * int(live_price)
         try:
             await self.db.buy_shares(
                 ctx.author.id,
@@ -72,7 +85,7 @@ class StockCog(commands.Cog):
             title="✅ STOCKS PURCHASED",
             description=(
                 f"Purchased `{int(stocks):,}` stocks for `{int(cost):,} aUEC`.\n"
-                f"Price per stock: `{int(STOCK_PRICE):,} aUEC`."
+                f"Price per stock: `{int(live_price):,} aUEC`."
             ),
             colour=discord.Colour.green(),
         )
@@ -173,7 +186,8 @@ class StockCog(commands.Cog):
         embed.add_field(name="Stocks (Locked)", value=f"`{int(locked):,}`", inline=True)
         embed.add_field(name="Pending Bonds", value=f"`{int(pending_bonds_count):,}`", inline=True)
         embed.add_field(name="Outstanding Bonds", value=f"`{int(pending_bonds_total):,} aUEC`", inline=True)
-        embed.set_footer(text=f"Reference stock price: {int(STOCK_PRICE):,} aUEC")
+        live_price = await self._get_live_stock_price(guild_id=gid)
+        embed.set_footer(text=f"Current stock price: {int(live_price):,} aUEC")
 
         await ctx.respond(embed=embed, files=_logo_files(), ephemeral=True)
 
