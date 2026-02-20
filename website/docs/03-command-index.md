@@ -9,6 +9,7 @@
 ## UI-first boards (preferred for daily use)
 - `jobs-board`:
   - **Post Job** (starts area -> tier -> modal flow)
+  - **Crew** (opens Add/Remove/View crew tools)
 - `stock-board`:
   - **Buy** (modal flow)
   - **Sell** (modal flow + cashout request)

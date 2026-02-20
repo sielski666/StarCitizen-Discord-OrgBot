@@ -60,7 +60,14 @@
 
 ---
 
-## Crew commands (non-event jobs)
+## Crew management (non-event jobs)
+
+Preferred UI path:
+- Click **Crew** on `jobs-board`
+- Choose **Add Crew**, **Remove Crew**, or **View Crew**
+- Provide job/member IDs in modal where needed
+
+Fallback command path:
 
 ### `/jobs crew_add job_id:<id> member:<member>`
 Adds a crew member to the job payout group.

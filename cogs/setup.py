@@ -3,7 +3,7 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
-from services.permissions import is_admin_member
+from services.permissions import is_admin_member, is_finance, is_jobs_admin
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -46,6 +46,107 @@ class StockBuyModal(discord.ui.Modal):
             f"✅ Purchased `{stocks:,}` stocks for `{cost:,} aUEC` (price `{live_price:,} aUEC`).",
             ephemeral=True,
         )
+
+
+class CrewManageModal(discord.ui.Modal):
+    def __init__(self, action: str):
+        self.action = str(action)
+        title = {
+            "add": "Add Crew Member",
+            "remove": "Remove Crew Member",
+            "list": "View Crew List",
+        }.get(self.action, "Crew")
+        super().__init__(title=title)
+        self.job_id = discord.ui.InputText(label="Job ID", placeholder="e.g. 123", max_length=12)
+        self.member_id = discord.ui.InputText(
+            label="Member ID (required for add/remove)",
+            placeholder="Discord user ID",
+            required=(self.action in ("add", "remove")),
+            max_length=24,
+        )
+        self.add_item(self.job_id)
+        self.add_item(self.member_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        db = getattr(interaction.client, "db", None)
+        if db is None:
+            return await interaction.response.send_message("Crew system unavailable right now.", ephemeral=True)
+
+        raw_job = (self.job_id.value or "").strip()
+        if not raw_job.isdigit() or int(raw_job) < 1:
+            return await interaction.response.send_message("Job ID must be a positive number.", ephemeral=True)
+        job_id = int(raw_job)
+
+        gid = interaction.guild.id if interaction.guild else None
+        row = await db.get_job(job_id, guild_id=gid)
+        if not row:
+            return await interaction.response.send_message("Job not found.", ephemeral=True)
+
+        category = await db.get_job_category(job_id)
+        if category == "event":
+            return await interaction.response.send_message("Event jobs use attendance, not crew list.", ephemeral=True)
+
+        status = str(row[6])
+        claimed_by = int(row[8]) if row[8] is not None else None
+        author = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if author is None:
+            return await interaction.response.send_message("Member context required.", ephemeral=True)
+
+        if self.action in ("add", "remove"):
+            is_manager = (claimed_by is not None and int(author.id) == int(claimed_by)) or is_admin_member(author) or is_jobs_admin(author) or is_finance(author)
+            if not is_manager:
+                return await interaction.response.send_message("Only claimer, Jobs Admin, Finance, or Admin can manage crew.", ephemeral=True)
+            if status not in ("claimed", "completed"):
+                return await interaction.response.send_message("Crew can only be edited when job is CLAIMED/COMPLETED.", ephemeral=True)
+
+        if self.action == "list":
+            crew = await db.list_job_crew(job_id, guild_id=gid)
+            lines = []
+            if claimed_by:
+                lines.append(f"Claimer: <@{claimed_by}>")
+            lines.append("Crew: " + (", ".join(f"<@{int(uid)}>" for uid in crew[:30]) if crew else "none"))
+            return await interaction.response.send_message(f"Job #{job_id} payout group:\n" + "\n".join(lines), ephemeral=True)
+
+        raw_member = (self.member_id.value or "").strip()
+        if not raw_member.isdigit():
+            return await interaction.response.send_message("Member ID must be numeric for add/remove.", ephemeral=True)
+        member_id = int(raw_member)
+
+        member_obj = interaction.guild.get_member(member_id) if interaction.guild else None
+        if self.action == "add":
+            if claimed_by is not None and int(member_id) == int(claimed_by):
+                return await interaction.response.send_message("Claimer is already part of payout group.", ephemeral=True)
+            if member_obj is not None and member_obj.bot:
+                return await interaction.response.send_message("Bots cannot be added as crew members.", ephemeral=True)
+
+            added = await db.add_job_crew_member(job_id, member_id, added_by=int(author.id), guild_id=gid)
+            if not added:
+                return await interaction.response.send_message("Member already in crew list or job not editable.", ephemeral=True)
+            crew = await db.list_job_crew(job_id, guild_id=gid)
+            return await interaction.response.send_message(f"Added <@{member_id}> to Job #{job_id} crew. Crew count: `{len(crew)}`.", ephemeral=True)
+
+        removed = await db.remove_job_crew_member(job_id, member_id, guild_id=gid)
+        if not removed:
+            return await interaction.response.send_message("Member is not in the crew list.", ephemeral=True)
+        crew = await db.list_job_crew(job_id, guild_id=gid)
+        return await interaction.response.send_message(f"Removed <@{member_id}> from Job #{job_id} crew. Crew count: `{len(crew)}`.", ephemeral=True)
+
+
+class CrewActionChoiceView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+
+    @discord.ui.button(label="Add Crew", style=discord.ButtonStyle.primary)
+    async def add_crew(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_modal(CrewManageModal("add"))
+
+    @discord.ui.button(label="Remove Crew", style=discord.ButtonStyle.danger)
+    async def remove_crew(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_modal(CrewManageModal("remove"))
+
+    @discord.ui.button(label="View Crew", style=discord.ButtonStyle.secondary)
+    async def view_crew(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_modal(CrewManageModal("list"))
 
 
 class StockSellModal(discord.ui.Modal):
@@ -130,7 +231,7 @@ class JobsBoardView(discord.ui.View):
 
     @discord.ui.button(label="Crew", style=discord.ButtonStyle.secondary, custom_id="board_jobs_crew")
     async def crew_help(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Crew tools are in the job thread control card (Add/Remove/View Crew).", ephemeral=True)
+        await interaction.response.send_message("Crew tools", view=CrewActionChoiceView(), ephemeral=True)
 
 
 class StockBoardView(discord.ui.View):
