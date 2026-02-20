@@ -1,4 +1,4 @@
-# 06 - Event Template Commands
+# 05 - Event Template Commands
 
 Templates are now event-focused and used with `/eventjob post`.
 
@@ -31,9 +31,6 @@ Enables template.
 
 ## `/eventtemplate delete name:<template>`
 Deletes template.
-
-## `/eventjob post template:<name>`
-Posts an event job from an event template.
 
 ---
 
