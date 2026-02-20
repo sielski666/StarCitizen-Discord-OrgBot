@@ -1,18 +1,13 @@
-# 09 - Account Commands
+# 08 - Account Commands
 
 ## `/account overview`
 Shows:
-- Org Credits
-- Shares
-- Reputation
-- Level
-- Tier
-
-## `/account buyshares amount:<n>`
-Buys shares using available Org Credits.
-
-## `/account sellshares amount:<n>`
-Creates cashout request and locks shares until approved/rejected.
+- account balance (aUEC)
+- stocks (total / available / locked)
+- pending stock sells
+- estimated stock value
+- reputation / level / tier
+- pending bonds and outstanding bond value
 
 ## `/account debugtiers user:<member>`
 **Who:** finance/admin
@@ -23,5 +18,12 @@ Audits user level/tier and expected role mapping.
 **Who:** finance/admin
 
 Syncs tier role assignment to match current level.
-- With user arg: sync one user.
-- Without user arg: broader sync behavior per implementation.
+
+---
+
+## Stock trading moved out of `/account`
+Use `/stock` commands instead:
+- `/stock buy`
+- `/stock sell`
+- `/stock portfolio`
+- `/stock market`

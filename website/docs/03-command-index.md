@@ -1,10 +1,9 @@
-# 04 - Command Index
-
-This page is the command map. Use the detailed pages for exact usage and behavior.
+# 03 - Command Index
 
 ## Setup
 - `/setup start`
 - `/setup status`
+- `/setup doctor`
 - `/setup createchannels`
 
 ## Jobs
@@ -36,7 +35,6 @@ This page is the command map. Use the detailed pages for exact usage and behavio
 - `/eventtemplate enable`
 - `/eventtemplate delete`
 
-
 ## Job Test (admin)
 - `/jobtest event_sync_check`
 - `/jobtest event_dryrun_payout`
@@ -48,6 +46,7 @@ This page is the command map. Use the detailed pages for exact usage and behavio
 - `/finance cashout_lookup`
 - `/finance user_audit`
 - `/finance cashout_stats`
+- `/finance stock_stats`
 - `/finance reconcile`
 
 ## Treasury
@@ -56,7 +55,16 @@ This page is the command map. Use the detailed pages for exact usage and behavio
 
 ## Account
 - `/account overview`
-- `/account buyshares`
-- `/account sellshares`
 - `/account debugtiers`
 - `/account rolesync`
+
+## Bonds
+- `/bond redeem`
+
+## Stocks
+- `/stock buy`
+- `/stock sell`
+- `/stock portfolio`
+- `/stock market`
+- `/stock price_nudge` (finance/admin)
+- `/stock price_set` (finance/admin)
