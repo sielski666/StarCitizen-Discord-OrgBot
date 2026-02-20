@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from services.db import Database
+from services.permissions import is_finance_or_admin
 
 ASSET_ORG_LOGO_PNG = "assets/org_logo.png"
 DEFAULT_STOCK_PRICE = 100_000
@@ -12,6 +13,13 @@ FINANCE_CHANNEL_ID = int(os.getenv("FINANCE_CHANNEL_ID", "0") or "0")
 SHARES_SELL_CHANNEL_ID = int(os.getenv("SHARES_SELL_CHANNEL_ID", "0") or "0")
 
 logger = logging.getLogger(__name__)
+
+
+def finance_or_admin():
+    async def predicate(ctx: discord.ApplicationContext):
+        return isinstance(ctx.author, discord.Member) and is_finance_or_admin(ctx.author)
+    return commands.check(predicate)
+
 
 
 def _logo_files():
@@ -41,6 +49,64 @@ class StockCog(commands.Cog):
         base = int(cfg.get("base_price") or DEFAULT_STOCK_PRICE)
         await self.db.set_stock_price_state(guild_id=guild_id, current_price=int(base), day_open_price=int(base), day_high_price=int(base), day_low_price=int(base))
         return int(base)
+
+    async def _reprice_from_metrics(self, guild_id: int | None = None) -> tuple[int, int, int]:
+        cfg = await self.db.get_stock_market_config(guild_id=guild_id)
+        state = await self.db.get_stock_price_state(guild_id=guild_id)
+        metrics = await self.db.get_stock_trade_metrics(guild_id=guild_id)
+
+        current = int(state.get("current_price") or cfg.get("base_price") or DEFAULT_STOCK_PRICE)
+        day_open = int(state.get("day_open_price") or current)
+        net_units = int(metrics.get("net_units_24h") or 0)
+
+        sensitivity_bps = int(cfg.get("demand_sensitivity_bps") or 50)
+        cap_bps = max(0, int(cfg.get("daily_move_cap_bps") or 500))
+        step_units = 100
+        demand_steps = int(net_units // step_units)
+        demand_bps = max(-cap_bps, min(cap_bps, demand_steps * sensitivity_bps))
+
+        raw_price = int(round(current * (10000 + demand_bps) / 10000))
+
+        min_price = int(cfg.get("min_price") or 1)
+        max_price = int(cfg.get("max_price") or 10**12)
+
+        day_floor = int(round(day_open * (10000 - cap_bps) / 10000))
+        day_ceiling = int(round(day_open * (10000 + cap_bps) / 10000))
+
+        lower = max(min_price, day_floor)
+        upper = min(max_price, day_ceiling)
+        if lower > upper:
+            lower, upper = upper, lower
+
+        new_price = min(max(raw_price, lower), upper)
+
+        await self.db.set_stock_price_state(guild_id=guild_id, current_price=int(new_price))
+        return int(current), int(new_price), int(demand_bps)
+
+    async def _manual_price_adjust_bps(self, delta_bps: int, guild_id: int | None = None) -> tuple[int, int]:
+        cfg = await self.db.get_stock_market_config(guild_id=guild_id)
+        state = await self.db.get_stock_price_state(guild_id=guild_id)
+        current = int(state.get("current_price") or cfg.get("base_price") or DEFAULT_STOCK_PRICE)
+        day_open = int(state.get("day_open_price") or current)
+
+        cap_bps = max(0, int(cfg.get("daily_move_cap_bps") or 500))
+        min_price = int(cfg.get("min_price") or 1)
+        max_price = int(cfg.get("max_price") or 10**12)
+
+        bounded_delta = max(-cap_bps, min(cap_bps, int(delta_bps)))
+        raw_price = int(round(current * (10000 + bounded_delta) / 10000))
+
+        day_floor = int(round(day_open * (10000 - cap_bps) / 10000))
+        day_ceiling = int(round(day_open * (10000 + cap_bps) / 10000))
+
+        lower = max(min_price, day_floor)
+        upper = min(max_price, day_ceiling)
+        if lower > upper:
+            lower, upper = upper, lower
+
+        new_price = min(max(raw_price, lower), upper)
+        await self.db.set_stock_price_state(guild_id=guild_id, current_price=int(new_price))
+        return int(current), int(new_price)
 
     @staticmethod
     def _cashout_embed(request_id: int, requester_id: int, stocks: int, status: str) -> discord.Embed:
@@ -78,6 +144,7 @@ class StockCog(commands.Cog):
                 units=int(stocks),
                 guild_id=(ctx.guild.id if ctx.guild else None),
             )
+            await self._reprice_from_metrics(guild_id=(ctx.guild.id if ctx.guild else None))
         except ValueError as e:
             return await ctx.respond(str(e), ephemeral=True)
 
@@ -114,6 +181,7 @@ class StockCog(commands.Cog):
                 units=int(stocks),
                 guild_id=(ctx.guild.id if ctx.guild else None),
             )
+            await self._reprice_from_metrics(guild_id=(ctx.guild.id if ctx.guild else None))
         except ValueError as e:
             return await ctx.followup.send(str(e), ephemeral=True)
 
@@ -164,6 +232,34 @@ class StockCog(commands.Cog):
             f"Estimated payout: `{payout_amount:,} aUEC`{warn}",
             ephemeral=True,
         )
+
+    @stock.command(name="price_nudge", description="(Finance/Admin) Nudge stock price by basis points")
+    @finance_or_admin()
+    async def price_nudge(self, ctx: discord.ApplicationContext, bps: int):
+        gid = (ctx.guild.id if ctx.guild else None)
+        before, after = await self._manual_price_adjust_bps(delta_bps=int(bps), guild_id=gid)
+        await ctx.respond(
+            f"Stock price adjusted: `{before:,} -> {after:,} aUEC` (requested `{int(bps)}` bps).",
+            ephemeral=True,
+        )
+
+    @stock.command(name="price_set", description="(Finance/Admin) Set stock price directly (bounded by config limits)")
+    @finance_or_admin()
+    async def price_set(self, ctx: discord.ApplicationContext, price: int):
+        gid = (ctx.guild.id if ctx.guild else None)
+        cfg = await self.db.get_stock_market_config(guild_id=gid)
+        min_price = int(cfg.get("min_price") or 1)
+        max_price = int(cfg.get("max_price") or 10**12)
+        bounded = min(max(int(price), min_price), max_price)
+        state = await self.db.get_stock_price_state(guild_id=gid)
+        day_open = int(state.get("day_open_price") or bounded)
+        cap_bps = max(0, int(cfg.get("daily_move_cap_bps") or 500))
+        floor = int(round(day_open * (10000 - cap_bps) / 10000))
+        ceil = int(round(day_open * (10000 + cap_bps) / 10000))
+        bounded = min(max(int(bounded), max(min_price, floor)), min(max_price, ceil))
+        old = int(state.get("current_price") or bounded)
+        await self.db.set_stock_price_state(guild_id=gid, current_price=int(bounded))
+        await ctx.respond(f"Stock price set: `{old:,} -> {int(bounded):,} aUEC`.", ephemeral=True)
 
     @stock.command(name="portfolio", description="View your stock holdings and account balance")
     async def portfolio(self, ctx: discord.ApplicationContext):
