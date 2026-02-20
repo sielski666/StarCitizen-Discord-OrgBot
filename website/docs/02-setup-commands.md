@@ -7,6 +7,8 @@ Run setup before production use.
 
 This now:
 - ensures required channels (`jobs`, `treasury`, `stock-sell-confirm`, `stock-market`)
+- ensures board channels (`jobs-board`, `stock-board`, `finance-board`)
+- deploys/refreshes board messages in those board channels
 - ensures required roles (`Finance`, `Jobs Admin`, `Event Handler`)
 - syncs guild settings
 - writes stock config defaults if missing:

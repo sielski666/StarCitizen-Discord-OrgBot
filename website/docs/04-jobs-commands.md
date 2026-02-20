@@ -4,8 +4,9 @@
 **Who:** guild members
 
 **How to use:**
-- Run `/jobs post`
-- Choose area -> choose tier -> fill modal
+- Preferred: click **Post Job** on `jobs-board`
+- Fallback: run `/jobs post`
+- Then choose area -> choose tier -> fill modal
 
 **What it does:**
 - Creates a non-event job card routed to the mapped area channel.

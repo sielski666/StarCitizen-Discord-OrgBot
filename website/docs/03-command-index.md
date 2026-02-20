@@ -6,6 +6,17 @@
 - `/setup doctor`
 - `/setup createchannels`
 
+## UI-first boards (preferred for daily use)
+- `jobs-board`:
+  - **Post Job** (starts area -> tier -> modal flow)
+- `stock-board`:
+  - **Buy** (modal flow)
+  - **Sell** (modal flow + cashout request)
+  - **Market** (live snapshot)
+- `finance-board`:
+  - **Cashout Stats**
+  - **Stock Stats**
+
 ## Jobs
 - `/jobs post`
 - `/jobs complete`

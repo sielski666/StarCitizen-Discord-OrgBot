@@ -26,6 +26,12 @@ Shows stock market visibility:
 - total stocks + notional value
 - treasury exposure
 
+**Net flow (since reset) explained:**
+- Buys count as positive demand
+- Sells count as negative demand
+- Net flow = buys - sells
+- “Since reset” means from the last metrics reset point (not a strict rolling 24h window)
+
 ### `/finance reconcile`
 Compares current treasury value against ledger-derived value.
 
