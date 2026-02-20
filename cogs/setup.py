@@ -34,7 +34,7 @@ class SetupModal(discord.ui.Modal):
             max_length=24,
         )
         self.channel_ids = discord.ui.InputText(
-            label="Channel IDs (jobs, treasury, shares)",
+            label="Channel IDs (jobs, treasury, stocks)",
             value=",".join(
                 [
                     env.get("JOBS_CHANNEL_ID", ""),
@@ -83,7 +83,7 @@ class SetupModal(discord.ui.Modal):
 
         if not all((x == "" or x.isdigit()) for x in parts):
             return await interaction.response.send_message(
-                "Channel IDs must be numeric when provided (jobs, treasury, shares).",
+                "Channel IDs must be numeric when provided (jobs, treasury, stocks).",
                 ephemeral=True,
             )
 
@@ -95,7 +95,6 @@ class SetupModal(discord.ui.Modal):
 
         channels = await self.cog._ensure_channels(
             guild,
-            jobs_channel_id,
             treasury_channel_id,
             shares_sell_channel_id,
         )
@@ -125,7 +124,7 @@ class SetupModal(discord.ui.Modal):
             "✅ Setup saved + channels ensured\n"
             f"Jobs: <#{jobs_channel_id}>\n"
             f"Treasury: <#{treasury_channel_id}>\n"
-            f"Shares Sell: <#{shares_sell_channel_id}>\n"
+            f"Stocks Sell: <#{shares_sell_channel_id}>\n"
             "If self-hosting: restart the bot only after `.env` or deployment changes. If hosted by the bot operator, no restart action is needed in your server.",
             ephemeral=True,
         )
@@ -159,7 +158,7 @@ class SetupCog(commands.Cog):
 
         try:
             treasury_id = await ensure_one(treasury_channel_id, "treasury")
-            shares_id = await ensure_one(shares_sell_channel_id, "share-sell-confirm")
+            shares_id = await ensure_one(shares_sell_channel_id, "stock-sell-confirm")
             return treasury_id, shares_id
         except Exception:
             return None
@@ -211,6 +210,22 @@ class SetupCog(commands.Cog):
         except Exception:
             return None
 
+    async def _ensure_stock_channels(self, guild: discord.Guild, stock_market_channel_id: str) -> str | None:
+        try:
+            by_name = discord.utils.get(guild.text_channels, name="stock-market")
+            if by_name is not None:
+                return str(by_name.id)
+
+            if stock_market_channel_id.isdigit():
+                ch = guild.get_channel(int(stock_market_channel_id))
+                if ch is not None:
+                    return str(ch.id)
+
+            created = await guild.create_text_channel("stock-market")
+            return str(created.id)
+        except Exception:
+            return None
+
     def _read_env(self) -> dict[str, str]:
         data: dict[str, str] = {}
         if not ENV_PATH.exists():
@@ -237,6 +252,13 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
+            "STOCK_MARKET_CHANNEL_ID",
+            "STOCK_ENABLED",
+            "STOCK_BASE_PRICE",
+            "STOCK_MIN_PRICE",
+            "STOCK_MAX_PRICE",
+            "STOCK_DAILY_MOVE_CAP_BPS",
+            "STOCK_DEMAND_SENSITIVITY_BPS",
             "FINANCE_CHANNEL_ID",
         ]
 
@@ -300,6 +322,16 @@ class SetupCog(commands.Cog):
 
         treasury_id, shares_id = ensured
 
+        stock_market_id = await self._ensure_stock_channels(
+            guild,
+            env.get("STOCK_MARKET_CHANNEL_ID", ""),
+        )
+        if stock_market_id is None:
+            return await ctx.followup.send(
+                "Failed creating/validating stock channels. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
         finance_role_id = await self._ensure_role(
             guild,
             env.get("FINANCE_ROLE_ID", ""),
@@ -338,6 +370,13 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
+            "STOCK_MARKET_CHANNEL_ID": str(stock_market_id),
+            "STOCK_ENABLED": env.get("STOCK_ENABLED", "1") or "1",
+            "STOCK_BASE_PRICE": env.get("STOCK_BASE_PRICE", "100000") or "100000",
+            "STOCK_MIN_PRICE": env.get("STOCK_MIN_PRICE", "50000") or "50000",
+            "STOCK_MAX_PRICE": env.get("STOCK_MAX_PRICE", "250000") or "250000",
+            "STOCK_DAILY_MOVE_CAP_BPS": env.get("STOCK_DAILY_MOVE_CAP_BPS", "500") or "500",
+            "STOCK_DEMAND_SENSITIVITY_BPS": env.get("STOCK_DEMAND_SENSITIVITY_BPS", "50") or "50",
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": area_map_value,
         }
@@ -348,7 +387,8 @@ class SetupCog(commands.Cog):
             "✅ Setup synced from .env and guild context\n"
             f"Guild: `{updates['GUILD_ID']}`\n"
             f"Treasury: <#{treasury_id}>\n"
-            f"Shares Sell: <#{shares_id}>\n"
+            f"Stocks Sell: <#{shares_id}>\n"
+            f"Stock Market: <#{stock_market_id}>\n"
             f"Event Handler Role: <@&{event_handler_role_id}>\n"
             f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
             "(Token remains managed in `.env` as DISCORD_TOKEN.)"
@@ -375,6 +415,13 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID",
             "TREASURY_CHANNEL_ID",
             "SHARES_SELL_CHANNEL_ID",
+            "STOCK_MARKET_CHANNEL_ID",
+            "STOCK_ENABLED",
+            "STOCK_BASE_PRICE",
+            "STOCK_MIN_PRICE",
+            "STOCK_MAX_PRICE",
+            "STOCK_DAILY_MOVE_CAP_BPS",
+            "STOCK_DEMAND_SENSITIVITY_BPS",
         ]
         missing = [k for k in required if not env.get(k)]
 
@@ -389,7 +436,7 @@ class SetupCog(commands.Cog):
             f"Job Category Map: `{env.get('JOB_CATEGORY_CHANNEL_MAP', 'missing')}`\n"
             f"Jobs Channel: `{env.get('JOBS_CHANNEL_ID', 'missing')}`\n"
             f"Treasury Channel: `{env.get('TREASURY_CHANNEL_ID', env.get('FINANCE_CHANNEL_ID', 'missing'))}`\n"
-            f"Shares Sell Channel: `{env.get('SHARES_SELL_CHANNEL_ID', 'missing')}`\n"
+            f"Stocks Sell Channel: `{env.get('SHARES_SELL_CHANNEL_ID', 'missing')}`\n"
         )
         if missing:
             text += "\n⚠️ Missing: " + ", ".join(missing)
@@ -442,7 +489,7 @@ class SetupCog(commands.Cog):
             else:
                 checks_ok.append(f"{role_key} valid")
 
-        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID"]
+        channel_keys = ["JOBS_CHANNEL_ID", "TREASURY_CHANNEL_ID", "SHARES_SELL_CHANNEL_ID", "STOCK_MARKET_CHANNEL_ID"]
         for ck in channel_keys:
             cv = env.get(ck, "")
             if not cv or not cv.isdigit():
@@ -496,7 +543,7 @@ class SetupCog(commands.Cog):
 
         await ctx.respond(text, ephemeral=True)
 
-    @setup_group.command(name="createchannels", description="Create missing treasury/shares + job-area channels")
+    @setup_group.command(name="createchannels", description="Create missing treasury/stocks + job-area channels")
     async def setup_create_channels(self, ctx: discord.ApplicationContext):
         member = ctx.author if isinstance(ctx.author, discord.Member) else None
         if not member or not is_admin_member(member):
@@ -521,6 +568,16 @@ class SetupCog(commands.Cog):
 
         treasury_id, shares_id = ensured
 
+        stock_market_id = await self._ensure_stock_channels(
+            guild,
+            env.get("STOCK_MARKET_CHANNEL_ID", ""),
+        )
+        if stock_market_id is None:
+            return await ctx.respond(
+                "Failed creating stock channels. Ensure bot has Manage Channels permission.",
+                ephemeral=True,
+            )
+
         area_map = await self._ensure_job_area_channels(guild)
         if area_map is None:
             return await ctx.respond(
@@ -532,6 +589,7 @@ class SetupCog(commands.Cog):
             "JOBS_CHANNEL_ID": str(area_map["general"]),
             "TREASURY_CHANNEL_ID": str(treasury_id),
             "SHARES_SELL_CHANNEL_ID": str(shares_id),
+            "STOCK_MARKET_CHANNEL_ID": str(stock_market_id),
             "FINANCE_CHANNEL_ID": str(treasury_id),
             "JOB_CATEGORY_CHANNEL_MAP": ",".join(f"{k}:{v}" for k, v in area_map.items()),
         }
@@ -541,7 +599,8 @@ class SetupCog(commands.Cog):
         await ctx.respond(
             "✅ Channels ready\n"
             f"Treasury: <#{treasury_id}>\n"
-            f"Shares Sell: <#{shares_id}>\n"
+            f"Stocks Sell: <#{shares_id}>\n"
+            f"Stock Market: <#{stock_market_id}>\n"
             f"Area Channels: general <#{area_map['general']}>, salvage <#{area_map['salvage']}>, mining <#{area_map['mining']}>, hauling <#{area_map['hauling']}>, event <#{area_map['event']}>\n"
             "Self-host only: restart after `.env` or deployment changes. Hosted users do not need to restart anything.",
             ephemeral=True,
