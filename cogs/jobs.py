@@ -869,17 +869,20 @@ class JobWorkflowView(discord.ui.View):
                 return await interaction.followup.send("No claimer to reward.", ephemeral=True)
             payout_targets.append((int(claimed_by), int(reward)))
 
-        try:
-            ok = await self.db.mark_paid(job_id_db)
-        except ValueError as e:
-            return await interaction.followup.send(f"Cannot confirm job: {e}", ephemeral=True)
-
-        if not ok:
+        settlement = await self.db.settle_job_payout(
+            int(job_id_db),
+            payout_targets,
+            confirmed_by=interaction.user.id,
+            guild_id=(interaction.guild.id if interaction.guild else None),
+        )
+        if not settlement.get("ok"):
             return await interaction.followup.send("Could not mark as rewarded (maybe already rewarded).", ephemeral=True)
+
+        paid_targets: list[tuple[int, int]] = list(settlement.get("paid_targets") or [])
 
         rep_added_total = 0
         payout_note_parts: list[str] = []
-        for uid, amount in payout_targets:
+        for uid, amount in paid_targets:
             await self.db.add_balance(
                 discord_id=int(uid),
                 amount=int(amount),
@@ -945,23 +948,39 @@ class JobWorkflowView(discord.ui.View):
             files=files if files else None,
         )
 
+        paid_total = int(sum(int(a) for _, a in paid_targets))
+        bond_total = int(settlement.get("bond_amount") or 0)
+        total_owed = int(settlement.get("total_owed") or 0)
+
         if thread_id and interaction.guild:
             try:
                 thread = interaction.guild.get_thread(thread_id) or await interaction.guild.fetch_channel(thread_id)
                 if category == "event":
                     extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
                     await thread.send(
-                        f"💰 Event payout complete: `{reward:,}` split across `{len(payout_targets)}` attendees."
+                        f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
                         f" Status: **ORG POINTS REWARDED**.{extra}"
                     )
                 else:
                     target_uid = int(payout_targets[0][0])
                     extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
-                    await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{target_uid}>. Status: **ORG POINTS REWARDED**.{extra}")
+                    await thread.send(
+                        f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
+                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                    )
             except Exception:
                 logger.debug("Failed sending reward thread update", exc_info=True)
 
-        await interaction.followup.send(f"Job #{job_id_db} confirmed. Org Points rewarded.", ephemeral=True)
+        if bond_total > 0:
+            await interaction.followup.send(
+                f"Job #{job_id_db} confirmed. Paid now: `{paid_total:,} aUEC` / `{total_owed:,} aUEC`. Outstanding Payout Issued (Bond IOU): `{bond_total:,} aUEC`.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                f"Job #{job_id_db} confirmed. Org Points rewarded: `{paid_total:,} aUEC`.",
+                ephemeral=True,
+            )
 
 
 class JobsCog(commands.Cog):
@@ -1658,17 +1677,20 @@ class JobsCog(commands.Cog):
                 return await ctx.respond("No claimer to reward.", ephemeral=True)
             payout_targets.append((int(claimed_by), int(reward)))
 
-        try:
-            ok = await self.db.mark_paid(jid)
-        except ValueError as e:
-            return await ctx.respond(f"Cannot confirm job: {e}", ephemeral=True)
-
-        if not ok:
+        settlement = await self.db.settle_job_payout(
+            int(jid),
+            payout_targets,
+            confirmed_by=ctx.author.id,
+            guild_id=(ctx.guild.id if ctx.guild else None),
+        )
+        if not settlement.get("ok"):
             return await ctx.respond("Could not mark as paid (maybe already paid).", ephemeral=True)
+
+        paid_targets: list[tuple[int, int]] = list(settlement.get("paid_targets") or [])
 
         rep_added_total = 0
         payout_note_parts: list[str] = []
-        for uid, amount in payout_targets:
+        for uid, amount in paid_targets:
             await self.db.add_balance(
                 discord_id=int(uid),
                 amount=int(amount),
@@ -1748,6 +1770,10 @@ class JobsCog(commands.Cog):
         except Exception:
             pass
 
+        paid_total = int(sum(int(a) for _, a in paid_targets))
+        bond_total = int(settlement.get("bond_amount") or 0)
+        total_owed = int(settlement.get("total_owed") or 0)
+
         # Notify in thread
         if thread_id:
             try:
@@ -1755,17 +1781,26 @@ class JobsCog(commands.Cog):
                 if category == "event":
                     extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
                     await thread.send(
-                        f"💰 Event payout complete: `{reward:,}` split across `{len(payout_targets)}` attendees."
+                        f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
                         f" Status: **ORG POINTS REWARDED**.{extra}"
                     )
                 else:
                     target_uid = int(payout_targets[0][0])
                     extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
-                    await thread.send(f"💰 Org Points rewarded: `{reward:,}` to <@{target_uid}>. Status: **ORG POINTS REWARDED**.{extra}")
+                    await thread.send(
+                        f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
+                        f" Status: **ORG POINTS REWARDED**.{extra}"
+                    )
             except Exception:
                 pass
 
-        await ctx.respond(f"Job #{jid} confirmed. Org Points rewarded.", ephemeral=True)
+        if bond_total > 0:
+            await ctx.respond(
+                f"Job #{jid} confirmed. Paid now: `{paid_total:,} aUEC` / `{total_owed:,} aUEC`. Outstanding Payout Issued (Bond IOU): `{bond_total:,} aUEC`.",
+                ephemeral=True,
+            )
+        else:
+            await ctx.respond(f"Job #{jid} confirmed. Org Points rewarded: `{paid_total:,} aUEC`.", ephemeral=True)
 
     # CANCEL (Admin ONLY)
     @jobs.command(name="cancel", description="(Admin) Cancel a job (locks/archives its thread)")

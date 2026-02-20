@@ -116,6 +116,19 @@ CREATE TABLE IF NOT EXISTS cashout_requests (
   handled_note TEXT
 );
 
+-- Outstanding payout IOUs created when treasury cannot fully pay rewards.
+CREATE TABLE IF NOT EXISTS payout_bonds (
+  bond_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id INTEGER NOT NULL DEFAULT 0,
+  org_id TEXT,
+  user_id INTEGER NOT NULL,
+  amount_owed INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending, redeemed
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  redeemed_at TEXT,
+  job_reference TEXT
+);
+
 -- Simple transaction log (for balance + shares + rep deltas)
 CREATE TABLE IF NOT EXISTS transactions (
   tx_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1062,7 +1075,14 @@ class Database:
             await self._rollback()
             raise
 
-    async def mark_paid(self, job_id: int) -> bool:
+    async def settle_job_payout(
+        self,
+        job_id: int,
+        payout_targets: list[tuple[int, int]],
+        confirmed_by: int | None = None,
+        guild_id: int | None = None,
+    ) -> dict:
+        """Settle a completed job with partial treasury payout + automatic Bond IOUs."""
         await self._begin()
         try:
             cur = await self.conn.execute(
@@ -1072,24 +1092,69 @@ class Database:
             row = await cur.fetchone()
             if not row:
                 await self._rollback()
-                return False
+                return {"ok": False, "reason": "job_not_found"}
 
             status, reward, escrow_amount, escrow_status = str(row[0]), int(row[1]), int(row[2] or 0), str(row[3] or "none")
             if status != "completed":
                 await self._rollback()
-                return False
+                return {"ok": False, "reason": "job_not_completed"}
 
-            payout_amount = int(escrow_amount or reward)
-            if TREASURY_AUTODEDUCT and payout_amount > 0:
-                tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
-                trow = await tcur.fetchone()
-                treasury_amount = int(trow[0]) if trow else 0
-                if treasury_amount < payout_amount:
-                    raise ValueError("Treasury too low for this payout.")
-                await self.conn.execute(
-                    "UPDATE treasury SET amount = amount - ?, updated_by=NULL, updated_at=datetime('now') WHERE id=1",
-                    (int(payout_amount),),
-                )
+            normalized_targets = [(int(uid), max(0, int(amount))) for uid, amount in payout_targets if int(amount) > 0]
+            total_owed = sum(int(amount) for _, amount in normalized_targets)
+            if total_owed <= 0:
+                await self._rollback()
+                return {"ok": False, "reason": "no_payout_targets"}
+
+            gid = int(guild_id) if guild_id is not None else 0
+            treasury_amount = 0
+            if TREASURY_AUTODEDUCT:
+                if guild_id is None:
+                    tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
+                    trow = await tcur.fetchone()
+                    treasury_amount = int(trow[0]) if trow else 0
+                else:
+                    await self.conn.execute(
+                        "INSERT OR IGNORE INTO treasury_by_guild(guild_id, amount) VALUES(?, 0)",
+                        (int(guild_id),),
+                    )
+                    tcur = await self.conn.execute(
+                        "SELECT amount FROM treasury_by_guild WHERE guild_id=?",
+                        (int(guild_id),),
+                    )
+                    trow = await tcur.fetchone()
+                    treasury_amount = int(trow[0]) if trow else 0
+
+            pay_now = min(int(total_owed), max(0, int(treasury_amount))) if TREASURY_AUTODEDUCT else int(total_owed)
+            if TREASURY_AUTODEDUCT and pay_now > 0:
+                if guild_id is None:
+                    await self.conn.execute(
+                        "UPDATE treasury SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                        (int(pay_now), int(confirmed_by) if confirmed_by is not None else None),
+                    )
+                else:
+                    await self.conn.execute(
+                        "UPDATE treasury_by_guild SET amount = amount - ?, updated_by=?, updated_at=datetime('now') WHERE guild_id=?",
+                        (int(pay_now), int(confirmed_by) if confirmed_by is not None else None, int(guild_id)),
+                    )
+
+            remaining_to_pay = int(pay_now)
+            paid_targets: list[tuple[int, int]] = []
+            bond_targets: list[tuple[int, int, int]] = []
+            for uid, owed in normalized_targets:
+                paid = min(int(owed), int(remaining_to_pay))
+                if paid > 0:
+                    paid_targets.append((int(uid), int(paid)))
+                    remaining_to_pay -= int(paid)
+                outstanding = int(owed) - int(paid)
+                if outstanding > 0:
+                    bcur = await self.conn.execute(
+                        """
+                        INSERT INTO payout_bonds(guild_id, org_id, user_id, amount_owed, status, job_reference)
+                        VALUES(?, ?, ?, ?, 'pending', ?)
+                        """,
+                        (gid, None, int(uid), int(outstanding), f"job:{int(job_id)}"),
+                    )
+                    bond_targets.append((int(uid), int(outstanding), int(bcur.lastrowid)))
 
             await self.conn.execute(
                 """
@@ -1100,6 +1165,7 @@ class Database:
                 (int(job_id),),
             )
 
+            payout_amount = int(escrow_amount or reward)
             if escrow_status == "reserved" and payout_amount > 0:
                 await self.add_ledger_entry(
                     entry_type="escrow_released",
@@ -1109,13 +1175,43 @@ class Database:
                     reference_type="job",
                     reference_id=str(int(job_id)),
                     notes="Released reserved job escrow on confirm",
+                    guild_id=guild_id,
                 )
 
+            await self.add_ledger_entry(
+                entry_type="job_payout_settlement",
+                amount=int(total_owed),
+                from_account="treasury" if TREASURY_AUTODEDUCT else "external",
+                to_account=f"members:{len(normalized_targets)}",
+                reference_type="job",
+                reference_id=str(int(job_id)),
+                notes=f"pay_now={int(pay_now)};bond_amount={int(total_owed - pay_now)}",
+                guild_id=guild_id,
+            )
+
             await self._commit()
-            return True
+            return {
+                "ok": True,
+                "total_owed": int(total_owed),
+                "pay_now": int(pay_now),
+                "bond_amount": int(total_owed - pay_now),
+                "paid_targets": paid_targets,
+                "bond_targets": bond_targets,
+            }
         except Exception:
             await self._rollback()
             raise
+
+    async def mark_paid(self, job_id: int) -> bool:
+        # Backward-compatible wrapper for legacy callers.
+        row = await self.get_job(int(job_id), guild_id=None)
+        if not row:
+            return False
+        claimed_by = int(row[8]) if row[8] is not None else None
+        reward = int(row[5]) if row[5] is not None else 0
+        targets = [(int(claimed_by), int(reward))] if claimed_by and reward > 0 else []
+        result = await self.settle_job_payout(int(job_id), targets, confirmed_by=None, guild_id=None)
+        return bool(result.get("ok"))
 
     async def cancel_job(self, job_id: int) -> bool:
         await self._begin()
