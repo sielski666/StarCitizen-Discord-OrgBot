@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS cashout_requests (
   handled_note TEXT
 );
 
--- Outstanding payout IOUs created when treasury cannot fully pay rewards.
+-- Outstanding payout bonds created when treasury cannot fully pay rewards.
 CREATE TABLE IF NOT EXISTS payout_bonds (
   bond_id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id INTEGER NOT NULL DEFAULT 0,
@@ -1096,7 +1096,7 @@ class Database:
         confirmed_by: int | None = None,
         guild_id: int | None = None,
     ) -> dict:
-        """Settle a completed job with partial treasury payout + automatic Bond IOUs."""
+        """Settle a completed job with partial treasury payout + automatic bonds."""
         await self._begin()
         try:
             cur = await self.conn.execute(
@@ -1286,6 +1286,20 @@ class Database:
         )
         row = await cur.fetchone()
         return int(row[0]) if row and row[0] is not None else 0
+
+    async def get_user_outstanding_bonds(self, user_id: int, guild_id: int | None = None) -> tuple[int, int]:
+        cur = await self.conn.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(amount_owed), 0)
+            FROM payout_bonds
+            WHERE user_id=? AND guild_id=? AND status='pending'
+            """,
+            (int(user_id), int(guild_id) if guild_id is not None else 0),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return 0, 0
+        return int(row[0] or 0), int(row[1] or 0)
 
     async def mark_bond_redeemed(self, bond_id: int, guild_id: int | None = None) -> bool:
         cur = await self.conn.execute(

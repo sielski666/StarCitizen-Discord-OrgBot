@@ -405,6 +405,10 @@ class AccountCog(commands.Cog):
         shares_available = await self.db.get_shares_available(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
         rep = await self.db.get_rep(ctx.author.id, guild_id=(ctx.guild.id if ctx.guild else None))
         level = await self.db.get_level(ctx.author.id, per_level=LEVEL_PER_REP, guild_id=(ctx.guild.id if ctx.guild else None))
+        pending_bonds_count, pending_bonds_total = await self.db.get_user_outstanding_bonds(
+            ctx.author.id,
+            guild_id=(ctx.guild.id if ctx.guild else None),
+        )
 
         tier_text = _tier_display_for_level(int(level))
         expected_role_id = _expected_tier_role_id(int(level))
@@ -426,6 +430,9 @@ class AccountCog(commands.Cog):
         embed.add_field(name="Shares (Locked)", value=f"`{shares_locked:,}`", inline=True)
         embed.add_field(name="Reputation", value=f"`{rep:,}`", inline=True)
         embed.add_field(name="Level", value=f"`{level:,}`", inline=True)
+
+        embed.add_field(name="Pending Bonds", value=f"`{pending_bonds_count:,}`", inline=True)
+        embed.add_field(name="Outstanding Bonds", value=f"`{pending_bonds_total:,} aUEC`", inline=True)
 
         embed.add_field(name="Tier", value=tier_text, inline=False)
         embed.add_field(name="Tier Role (Expected)", value=expected_role_txt, inline=False)

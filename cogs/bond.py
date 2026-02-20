@@ -25,14 +25,14 @@ class BondCog(commands.Cog):
 
     bond = discord.SlashCommandGroup("bond", "Outstanding payout bond commands")
 
-    @bond.command(name="redeem", description="Redeem your pending Bond IOUs using available treasury funds")
+    @bond.command(name="redeem", description="Redeem your pending bonds using available treasury funds")
     async def redeem(self, ctx: discord.ApplicationContext):
         await ctx.defer(ephemeral=True)
 
         gid = ctx.guild.id if ctx.guild else None
         pending = await self.db.list_pending_bonds(user_id=int(ctx.author.id), guild_id=gid, limit=1000)
         if not pending:
-            return await ctx.followup.send("You have no pending Bond IOUs.", ephemeral=True)
+            return await ctx.followup.send("You have no pending bonds.", ephemeral=True)
 
         result = await self.db.redeem_bonds_for_user(
             user_id=int(ctx.author.id),
@@ -53,7 +53,7 @@ class BondCog(commands.Cog):
 
         if redeemed_count <= 0 or paid_total <= 0:
             embed.description = "Treasury currently has insufficient funds to redeem your outstanding bonds."
-            embed.add_field(name="Pending Bond IOUs", value=f"`{len(pending):,}`", inline=True)
+            embed.add_field(name="Pending Bonds", value=f"`{len(pending):,}`", inline=True)
             embed.add_field(name="Treasury Available", value=f"`{treasury_after:,} aUEC`", inline=True)
             return await ctx.followup.send(embed=embed, files=_logo_files(), ephemeral=True)
 

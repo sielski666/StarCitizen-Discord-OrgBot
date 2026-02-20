@@ -43,7 +43,7 @@ class TreasuryCog(commands.Cog):
             embed.add_field(name="Last Updated By", value="—", inline=True)
 
         embed.add_field(name="Last Updated At", value=f"`{updated_at}`" if updated_at else "—", inline=True)
-        embed.set_footer(text="Treasury is manual (no Star Citizen API). Bond IOUs are outstanding payout liabilities.")
+        embed.set_footer(text="Treasury is manual (no Star Citizen API). Bonds are outstanding payout liabilities.")
 
         post_channel = self._target_channel(ctx)
         if post_channel is not None:

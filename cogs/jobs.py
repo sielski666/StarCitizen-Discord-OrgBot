@@ -958,14 +958,14 @@ class JobWorkflowView(discord.ui.View):
                 if category == "event":
                     extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
                     await thread.send(
-                        f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
+                        f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
                         f" Status: **ORG POINTS REWARDED**.{extra}"
                     )
                 else:
                     target_uid = int(payout_targets[0][0])
                     extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
                     await thread.send(
-                        f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
+                        f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
                         f" Status: **ORG POINTS REWARDED**.{extra}"
                     )
             except Exception:
@@ -973,7 +973,7 @@ class JobWorkflowView(discord.ui.View):
 
         if bond_total > 0:
             embed = discord.Embed(
-                title="Outstanding Payout Issued (Bond IOU)",
+                title="Outstanding Payout Issued (Bond)",
                 description=f"Job #{job_id_db} payout was partially funded.",
                 colour=discord.Colour.orange(),
             )
@@ -982,7 +982,7 @@ class JobWorkflowView(discord.ui.View):
             embed.add_field(name="Outstanding Payout", value=f"`{bond_total:,} aUEC`", inline=True)
             embed.add_field(
                 name="What happens next",
-                value="The outstanding amount was issued as a Bond IOU and can be redeemed when treasury has funds.",
+                value="The outstanding amount was issued as a bond and can be redeemed when treasury has funds.",
                 inline=False,
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -1791,14 +1791,14 @@ class JobsCog(commands.Cog):
                 if category == "event":
                     extra = f"\n+`{rep_added_total}` Reputation total" if rep_added_total else ""
                     await thread.send(
-                        f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
+                        f"💰 Event payout settled. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
                         f" Status: **ORG POINTS REWARDED**.{extra}"
                     )
                 else:
                     target_uid = int(payout_targets[0][0])
                     extra = f"\n+`{rep_added_total}` Reputation" if rep_added_total else ""
                     await thread.send(
-                        f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Bond IOU: `{bond_total:,}`."
+                        f"💰 Job payout settled for <@{target_uid}>. Total owed: `{total_owed:,}` | Paid now: `{paid_total:,}` | Outstanding bonds: `{bond_total:,}`."
                         f" Status: **ORG POINTS REWARDED**.{extra}"
                     )
             except Exception:
@@ -1806,7 +1806,7 @@ class JobsCog(commands.Cog):
 
         if bond_total > 0:
             embed = discord.Embed(
-                title="Outstanding Payout Issued (Bond IOU)",
+                title="Outstanding Payout Issued (Bond)",
                 description=f"Job #{jid} payout was partially funded.",
                 colour=discord.Colour.orange(),
             )
@@ -1815,7 +1815,7 @@ class JobsCog(commands.Cog):
             embed.add_field(name="Outstanding Payout", value=f"`{bond_total:,} aUEC`", inline=True)
             embed.add_field(
                 name="What happens next",
-                value="The outstanding amount was issued as a Bond IOU and can be redeemed when treasury has funds.",
+                value="The outstanding amount was issued as a bond and can be redeemed when treasury has funds.",
                 inline=False,
             )
             await ctx.respond(embed=embed, ephemeral=True)
