@@ -972,10 +972,20 @@ class JobWorkflowView(discord.ui.View):
                 logger.debug("Failed sending reward thread update", exc_info=True)
 
         if bond_total > 0:
-            await interaction.followup.send(
-                f"Job #{job_id_db} confirmed. Paid now: `{paid_total:,} aUEC` / `{total_owed:,} aUEC`. Outstanding Payout Issued (Bond IOU): `{bond_total:,} aUEC`.",
-                ephemeral=True,
+            embed = discord.Embed(
+                title="Outstanding Payout Issued (Bond IOU)",
+                description=f"Job #{job_id_db} payout was partially funded.",
+                colour=discord.Colour.orange(),
             )
+            embed.add_field(name="Total Job Value", value=f"`{total_owed:,} aUEC`", inline=True)
+            embed.add_field(name="Paid Now", value=f"`{paid_total:,} aUEC`", inline=True)
+            embed.add_field(name="Outstanding Payout", value=f"`{bond_total:,} aUEC`", inline=True)
+            embed.add_field(
+                name="What happens next",
+                value="The outstanding amount was issued as a Bond IOU and can be redeemed when treasury has funds.",
+                inline=False,
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             await interaction.followup.send(
                 f"Job #{job_id_db} confirmed. Org Points rewarded: `{paid_total:,} aUEC`.",
@@ -1795,10 +1805,20 @@ class JobsCog(commands.Cog):
                 pass
 
         if bond_total > 0:
-            await ctx.respond(
-                f"Job #{jid} confirmed. Paid now: `{paid_total:,} aUEC` / `{total_owed:,} aUEC`. Outstanding Payout Issued (Bond IOU): `{bond_total:,} aUEC`.",
-                ephemeral=True,
+            embed = discord.Embed(
+                title="Outstanding Payout Issued (Bond IOU)",
+                description=f"Job #{jid} payout was partially funded.",
+                colour=discord.Colour.orange(),
             )
+            embed.add_field(name="Total Job Value", value=f"`{total_owed:,} aUEC`", inline=True)
+            embed.add_field(name="Paid Now", value=f"`{paid_total:,} aUEC`", inline=True)
+            embed.add_field(name="Outstanding Payout", value=f"`{bond_total:,} aUEC`", inline=True)
+            embed.add_field(
+                name="What happens next",
+                value="The outstanding amount was issued as a Bond IOU and can be redeemed when treasury has funds.",
+                inline=False,
+            )
+            await ctx.respond(embed=embed, ephemeral=True)
         else:
             await ctx.respond(f"Job #{jid} confirmed. Org Points rewarded: `{paid_total:,} aUEC`.", ephemeral=True)
 
