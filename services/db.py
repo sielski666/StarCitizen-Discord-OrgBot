@@ -1287,6 +1287,152 @@ class Database:
         await self.conn.commit()
         return cur.rowcount == 1
 
+    async def redeem_bonds_for_user(
+        self,
+        user_id: int,
+        guild_id: int | None = None,
+        redeemed_by: int | None = None,
+    ) -> dict:
+        """Redeem pending bonds FIFO for a user using available treasury.
+
+        Returns dict with keys: redeemed_count, paid_total, treasury_before, treasury_after,
+        attempted_count, pending_after, redeemed_bond_ids.
+        """
+        gid = int(guild_id) if guild_id is not None else 0
+        uid = int(user_id)
+
+        await self._begin()
+        try:
+            # Ensure wallet row exists without nested commits.
+            if guild_id is None:
+                await self.conn.execute(
+                    "INSERT OR IGNORE INTO wallets(discord_id, balance) VALUES(?, 0)",
+                    (uid,),
+                )
+                tcur = await self.conn.execute("SELECT amount FROM treasury WHERE id=1")
+            else:
+                await self.conn.execute(
+                    "INSERT OR IGNORE INTO wallets_by_guild(guild_id, discord_id, balance) VALUES(?,?,0)",
+                    (gid, uid),
+                )
+                await self.conn.execute(
+                    "INSERT OR IGNORE INTO treasury_by_guild(guild_id, amount) VALUES(?, 0)",
+                    (gid,),
+                )
+                tcur = await self.conn.execute(
+                    "SELECT amount FROM treasury_by_guild WHERE guild_id=?",
+                    (gid,),
+                )
+
+            trow = await tcur.fetchone()
+            treasury_before = int(trow[0]) if trow else 0
+            remaining = int(treasury_before)
+
+            pcur = await self.conn.execute(
+                """
+                SELECT bond_id, amount_owed
+                FROM payout_bonds
+                WHERE user_id=? AND guild_id=? AND status='pending'
+                ORDER BY datetime(created_at) ASC, bond_id ASC
+                """,
+                (uid, gid),
+            )
+            pending_rows = await pcur.fetchall()
+
+            paid_total = 0
+            redeemed_count = 0
+            redeemed_bond_ids: list[int] = []
+
+            for bond_id_raw, amount_raw in pending_rows:
+                bond_id = int(bond_id_raw)
+                owed = max(0, int(amount_raw or 0))
+                if owed <= 0:
+                    continue
+                if remaining < owed:
+                    break
+
+                remaining -= owed
+                paid_total += owed
+                redeemed_count += 1
+                redeemed_bond_ids.append(bond_id)
+
+                await self.conn.execute(
+                    """
+                    UPDATE payout_bonds
+                    SET status='redeemed', redeemed_at=datetime('now')
+                    WHERE bond_id=? AND guild_id=? AND status='pending'
+                    """,
+                    (bond_id, gid),
+                )
+
+                if guild_id is None:
+                    await self.conn.execute(
+                        "UPDATE wallets SET balance = balance + ? WHERE discord_id=?",
+                        (owed, uid),
+                    )
+                else:
+                    await self.conn.execute(
+                        "UPDATE wallets_by_guild SET balance = balance + ? WHERE guild_id=? AND discord_id=?",
+                        (owed, gid, uid),
+                    )
+
+                await self.conn.execute(
+                    "INSERT INTO transactions(discord_id, type, amount, shares_delta, rep_delta, reference, guild_id) VALUES(?,?,?,?,?,?,?)",
+                    (
+                        uid,
+                        "bond_redeem",
+                        int(owed),
+                        0,
+                        0,
+                        f"bond:{bond_id}|redeemed_by:{int(redeemed_by)}" if redeemed_by is not None else f"bond:{bond_id}|redeemed",
+                        gid,
+                    ),
+                )
+
+            if paid_total > 0:
+                if guild_id is None:
+                    await self.conn.execute(
+                        "UPDATE treasury SET amount=?, updated_by=?, updated_at=datetime('now') WHERE id=1",
+                        (int(remaining), int(redeemed_by) if redeemed_by is not None else None),
+                    )
+                else:
+                    await self.conn.execute(
+                        "UPDATE treasury_by_guild SET amount=?, updated_by=?, updated_at=datetime('now') WHERE guild_id=?",
+                        (int(remaining), int(redeemed_by) if redeemed_by is not None else None, gid),
+                    )
+
+                await self.add_ledger_entry(
+                    entry_type="bond_redeem",
+                    amount=int(paid_total),
+                    from_account="treasury",
+                    to_account=f"wallet:{uid}",
+                    reference_type="bond",
+                    reference_id=(",".join(str(i) for i in redeemed_bond_ids[:20]) if redeemed_bond_ids else None),
+                    notes=f"Redeemed {int(redeemed_count)} bond(s) for user {uid}",
+                    guild_id=guild_id,
+                )
+
+            p2 = await self.conn.execute(
+                "SELECT COUNT(*) FROM payout_bonds WHERE user_id=? AND guild_id=? AND status='pending'",
+                (uid, gid),
+            )
+            pending_after_row = await p2.fetchone()
+            pending_after = int(pending_after_row[0]) if pending_after_row else 0
+
+            await self._commit()
+            return {
+                "redeemed_count": int(redeemed_count),
+                "paid_total": int(paid_total),
+                "treasury_before": int(treasury_before),
+                "treasury_after": int(remaining),
+                "attempted_count": int(len(pending_rows)),
+                "pending_after": int(pending_after),
+                "redeemed_bond_ids": redeemed_bond_ids,
+            }
+        except Exception:
+            await self._rollback()
+            raise
+
     async def cancel_job(self, job_id: int) -> bool:
         await self._begin()
         try:

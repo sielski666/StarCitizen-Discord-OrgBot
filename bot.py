@@ -13,6 +13,7 @@ from cogs.account import AccountCog, CashoutPersistentView
 from cogs.treasury import TreasuryCog
 from cogs.finance import FinanceCog  # ✅ make sure this exists now
 from cogs.setup import SetupCog
+from cogs.bond import BondCog
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0") or "0")
@@ -76,6 +77,7 @@ bot.add_cog(JobsCog(bot, db))
 bot.add_cog(AccountCog(bot, db))
 bot.add_cog(TreasuryCog(bot, db))
 bot.add_cog(FinanceCog(bot, db))  # ✅ finance dashboard
+bot.add_cog(BondCog(bot, db))
 bot.add_cog(SetupCog(bot))
 
 
