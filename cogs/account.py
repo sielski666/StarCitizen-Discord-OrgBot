@@ -708,11 +708,6 @@ class AccountCog(commands.Cog):
     async def buystock(self, ctx: discord.ApplicationContext, stocks: int):
         await self._buy_stocks_impl(ctx, int(stocks))
 
-    # Temporary alias for backwards compatibility.
-    @account.command(name="buyshares", description="(Deprecated) Use /account buystock")
-    async def buyshares(self, ctx: discord.ApplicationContext, shares: int):
-        await self._buy_stocks_impl(ctx, int(shares))
-
     async def _sell_stocks_impl(self, ctx: discord.ApplicationContext, stocks: int):
         await ctx.defer(ephemeral=True)
 
@@ -796,10 +791,6 @@ class AccountCog(commands.Cog):
     async def sellstock(self, ctx: discord.ApplicationContext, stocks: int):
         await self._sell_stocks_impl(ctx, int(stocks))
 
-    # Temporary alias for backwards compatibility.
-    @account.command(name="sellshares", description="(Deprecated) Use /account sellstock")
-    async def sellshares(self, ctx: discord.ApplicationContext, shares: int):
-        await self._sell_stocks_impl(ctx, int(shares))
 
 
 def setup(bot: commands.Bot):
