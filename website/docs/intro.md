@@ -1,27 +1,85 @@
-# 02 - Quick Start
+# 01 - Start Here (Beginner Guide)
 
-## Links
-- Invite bot: https://discord.com/oauth2/authorize?client_id=493717180584689665&scope=bot%20applications.commands&permissions=8
-- Docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
-- Discord: https://discord.gg/BT8rpuX8R
+If this is your first time running the bot, do this page top-to-bottom.
 
-## Baseline checks
-- Copy `.env.example` -> `.env` (remove `.example` suffix)
-- Manually set `DISCORD_TOKEN` in `.env`
-- Bot online in server
-- `/setup status` clean
-- Treasury initialized
-- At least one event template exists
+## What success looks like
 
-## First operational flow
-1. Create event template: `/eventtemplate add`
-2. Post event job: `/eventjob post template:<name>`
-3. RSVP participants via linked Discord Scheduled Event
-4. Admin marks complete, then finance/admin confirms with `/jobs confirm`
-5. Run `/finance reconcile`
+After setup, you should be able to:
+1. Run `/setup status` with no critical errors
+2. Post a job (`/jobs post`)
+3. Create + post an event template job (`/eventtemplate add` + `/eventjob post`)
+4. Confirm payout flow works (`/jobs confirm`)
 
-## Non-event flow quick test
-1. Run `/jobs post`
-2. Choose area then tier
-3. Submit modal
-4. Confirm job routes to expected area channel
+---
+
+## Prerequisites
+
+- Discord server where you are Admin
+- Discord bot token from Developer Portal
+- Python 3.10+
+- Terminal access on your host machine
+
+---
+
+## Step-by-step setup
+
+### 1) Install and run the bot
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Edit `.env` and set at least:
+- `DISCORD_TOKEN`
+- `GUILD_ID`
+
+Start:
+```bash
+python bot.py
+```
+
+### 2) Run Discord setup
+
+In your server:
+- `/setup start`
+- `/setup status`
+
+`/setup start` will create required channels/roles and apply defaults.
+
+### 3) Validate core flow
+
+- `/eventtemplate add`
+- `/eventjob post template:<name>`
+- RSVP via linked scheduled event
+- Complete + confirm job (`/jobs confirm`)
+
+### 4) Validate non-event flow
+
+- `/jobs post`
+- Pick area and tier
+- Submit modal
+- Confirm it routes to the expected channel
+
+---
+
+## Feature map (plain English)
+
+- **Setup**: provisions channels/roles/config sanity checks
+- **Jobs**: creates and tracks org work from posted to paid
+- **Event Jobs**: ties job attendance to Discord event RSVP
+- **Finance**: cashout/payout audit and reconciliation tools
+- **Treasury**: current treasury state + admin adjustment
+- **Account**: per-user overview and progression
+- **Stocks**: buy/sell market layer and admin controls
+
+---
+
+## Where to go next
+
+- Setup commands: `02-setup-commands.md`
+- Command index: `03-command-index.md`
+- Troubleshooting: `10-troubleshooting.md`
+- FAQ: `16-faq.md`

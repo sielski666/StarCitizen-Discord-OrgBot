@@ -1,179 +1,144 @@
 # StarCitizen Discord Org Bot
 
-A Discord bot for managing org jobs, payouts, treasury, rep/levels, and account cashouts.
+Discord bot for running org operations: jobs, event attendance, payouts, treasury, account progression, and stock/cashout flows.
 
-## Documentation & Community
+This README is the **operator quick manual**. Full docs are in `website/docs/` and published at:
+- https://sielski666.github.io/StarCitizen-Discord-OrgBot/
 
-- **Operator Manual (Docusaurus):** [Open Manual](https://sielski666.github.io/StarCitizen-Discord-OrgBot/)
-- **Invite bot:** https://discord.com/oauth2/authorize?client_id=493717180584689665&scope=bot%20applications.commands&permissions=8
-- **Discord support/community:** https://discord.gg/BT8rpuX8R
-- **Repo docs source:** `website/docs/`
+---
 
-> Tip: keep this README as a project overview; maintain full operational procedures in Docusaurus docs.
+## What this bot does
 
-## Features
+- Post and manage jobs (`/jobs post`, complete, confirm, cancel, reopen)
+- Run event-template jobs (`/eventjob post template:<name>`) with attendance sync
+- Track treasury and finance workflows (cashouts, payout stats, audits)
+- Handle account/rep/level utilities
+- Provide stock buy/sell + market tooling
 
-- **Jobs flow**
-  - Post normal jobs with area-first flow (`/jobs post`)
-  - Event jobs via templates (`/eventjob post template:<name>`)
-  - Event RSVP attendance sync (add/remove from Scheduled Event)
-  - Event attendance lock/snapshot + manual attendee correction
-  - Complete, payout, cancel, and reopen jobs
-- **Account flow**
-  - User account overview
-  - Buy/sell stocks
-  - Cashout request flow with persistent approve/reject handling
-  - Role/level sync utilities
-- **Finance tools**
-  - Pending cashouts
-  - Recent payouts
-  - Cashout lookup
-  - User audit and cashout stats
-- **Treasury**
-  - View treasury status
-  - Set treasury balance
+---
 
-## Tech Stack
+## 5-minute setup (self-host)
 
-- Python
-- py-cord (`py-cord==2.7.0`)
-- SQLite (`aiosqlite`)
-- dotenv (`python-dotenv`)
+1. **Create bot app/token** in Discord Developer Portal
+2. **Invite bot** to your server with admin perms (initial setup)
+3. **Clone repo** and enter it
+4. **Create venv + install deps**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+5. **Create `.env` from template**
+   ```bash
+   cp .env.example .env
+   ```
+6. **Set at minimum** in `.env`:
+   - `DISCORD_TOKEN`
+   - `GUILD_ID`
+7. **Run bot**
+   ```bash
+   python bot.py
+   ```
+8. In Discord, run:
+   - `/setup start`
+   - `/setup status`
 
-## Project Structure
+If `/setup status` is clean, you are operational.
 
-```text
-.
-├── bot.py
-├── cogs/
-│   ├── account.py
-│   ├── finance.py
-│   ├── jobs.py
-│   └── treasury.py
-├── services/
-│   ├── db.py
-│   ├── permissions.py
-│   ├── role_sync.py
-│   └── tiers.py
-├── assets/
-├── requirements.txt
-└── .env.example
-```
+---
 
-## Setup
+## First live workflow (recommended)
 
-### 1) Create and activate a virtual environment
+1. Create event template: `/eventtemplate add`
+2. Post event job: `/eventjob post template:<name>`
+3. Members RSVP in Discord Scheduled Event
+4. Complete job and confirm payout: `/jobs confirm`
+5. Reconcile finance: `/finance reconcile`
 
-```bash
-python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .venv\Scripts\activate    # Windows PowerShell
-```
+---
 
-### 2) Install dependencies
+## Required config keys (most important)
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3) Configure environment
-
-Copy `.env.example` to `.env` (remove the `.example` suffix).
-
-**Bot token lives in `.env`** and should be set manually:
-
-- `DISCORD_TOKEN=...`
-
-Then configure guild/roles/channels either by:
-
-- editing `.env` directly, or
-- running `/setup start` in Discord (admin only)
-
-Required keys used by the bot:
-
+- `DISCORD_TOKEN`
 - `GUILD_ID`
 - `FINANCE_ROLE_ID`
 - `JOBS_ADMIN_ROLE_ID`
-- `EVENT_HANDLER_ROLE_ID` (required to restrict event template posting)
-- `JOB_CATEGORY_CHANNEL_MAP` (area/category -> channel routing map)
-- `JOBS_CHANNEL_ID` (compat/fallback; setup derives this from general map channel)
+- `EVENT_HANDLER_ROLE_ID`
+- `JOB_CATEGORY_CHANNEL_MAP`
 - `TREASURY_CHANNEL_ID`
 - `STOCK_SELL_CHANNEL_ID` (preferred)
-- `SHARES_SELL_CHANNEL_ID` (legacy compatibility)
-- `FINANCE_CHANNEL_ID` (compat alias; usually same as `TREASURY_CHANNEL_ID`)
 
-Economy/tier values:
-- `SHARE_CASHOUT_AUEC_PER_SHARE`
-- `LEVEL_PER_REP`
-- `REP_PER_JOB_PAYOUT`
-- `BOND_AUTO_REDEEM` (scaffold; future use)
-- `MIN_IMMEDIATE_PAYOUT_PERCENT` (scaffold; future use)
-- `JOB_TIERS`
-- `LEVEL_ROLE_MAP`
+`/setup start` can provision most channels/roles and sync defaults for you.
 
-### 4) Run
+---
 
-```bash
-python bot.py
-```
+## Core commands
 
-## Updating
+### Setup
+- `/setup start`
+- `/setup status`
+- `/setup doctor`
+- `/setup createchannels`
 
-### Linux / macOS (git install)
-Update to latest `main` with:
+### Jobs
+- `/jobs post`, `/jobs complete`, `/jobs confirm`
+- `/jobs attendance_sync`, `/jobs attendance_lock`, `/jobs attendance_unlock`
 
+### Event templates/jobs
+- `/eventtemplate add|update|list|view|enable|disable|delete`
+- `/eventjob post template:<name>`
+
+### Finance/Treasury
+- `/finance pending_cashouts`, `/finance recent_payouts`, `/finance reconcile`
+- `/treasury status`, `/treasury set`
+
+### Account/Stock
+- `/account overview`
+- `/stock buy|sell|portfolio|market`
+
+---
+
+## Update safely
+
+### Linux/macOS
 ```bash
 ./scripts/update.sh
 ```
 
-What it does:
-- fetches `origin/main`
-- fast-forwards local repo
-- updates dependencies (`.venv`)
-- runs compile checks
-- restarts `starcitizen-orgbot`
-- auto-rolls back to previous commit if update fails
-
 ### Windows
-Use the native PowerShell updater:
-
 ```powershell
 .\scripts\update.ps1
 ```
 
-If you installed from ZIP (no `.git`), use manual update steps from the install/update guide.
+Updater handles pull, deps, compile checks, restart, and rollback on failure.
 
-For full platform install/update paths (git auto-update vs manual ZIP updates), see:
-- `website/docs/13-install-update-guide.md`
+---
 
-On startup, the bot:
+## Troubleshooting quick hits
 
-- connects DB
-- registers persistent UI views (cashout + job workflow)
-- refreshes recent event job cards so attendee display/state is current
-- syncs application commands to `GUILD_ID` (if provided)
+- **Commands missing:** check bot perms + wait 30–90s after sync
+- **Event post denied:** check Event Handler role / `EVENT_HANDLER_ROLE_ID`
+- **Attendance mismatch:** run `/jobs attendance_sync`
+- **Payout confirm fails:** ensure job is complete + snapshot has attendees
 
-## Branding (job card logo)
+Full troubleshooting: `website/docs/10-troubleshooting.md`
 
-The thumbnail logo shown in the top-right of job cards comes from:
+---
 
-- `assets/org_logo.png`
+## Security notes
 
-To use your org logo:
-1. Replace `assets/org_logo.png` with your image (keep filename the same).
-2. Restart the bot:
-   ```bash
-   sudo systemctl restart starcitizen-orgbot
-   ```
+- Keep `.env` private
+- Never post tokens in screenshots/logs
+- Rotate keys immediately if exposed
+- Do not commit `.env`
 
-If the file is missing, the bot posts cards without the custom logo.
+---
 
-## Notes
+## Links
 
-- Keep `.env` private (never commit real tokens/IDs).
-- This bot expects role/channel IDs to be valid in the target guild.
-- If slash/subcommands don’t show after deploy, restart bot and re-sync commands.
+- Operator docs: https://sielski666.github.io/StarCitizen-Discord-OrgBot/
+- Invite bot: https://discord.com/oauth2/authorize?client_id=493717180584689665&scope=bot%20applications.commands&permissions=8
+- Community/support: https://discord.gg/BT8rpuX8R
 
 ## License
-
 MIT
