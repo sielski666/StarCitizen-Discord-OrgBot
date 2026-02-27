@@ -1,8 +1,19 @@
+<<<<<<< HEAD
 # 10 - Troubleshooting (Operator Playbook)
+=======
+# 10 - Troubleshooting
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
 
 Use this when something breaks. Each section is symptom -> cause -> fix.
 
+<<<<<<< HEAD
 ## 1) Slash commands not showing
+=======
+## Commands missing in Discord
+- verify bot permissions
+- verify command sync and guild context
+- wait 30–90 seconds after invite/setup, then check again
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
 
 **Likely causes**
 - Bot missing permissions
@@ -18,6 +29,7 @@ Use this when something breaks. Each section is symptom -> cause -> fix.
 
 ---
 
+<<<<<<< HEAD
 ## 2) `/setup start` fails or partially completes
 
 **Likely causes**
@@ -112,3 +124,11 @@ This includes rollback on failed update.
 - Exact error text
 - Timestamp (UTC)
 - Screenshot/log snippet
+=======
+## Service issues (hosted users)
+If you suspect service/runtime issues, contact the bot operator with:
+- server (guild) ID
+- command used
+- exact error text/screenshot
+- timestamp (UTC)
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c

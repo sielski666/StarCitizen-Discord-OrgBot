@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # 05 - Jobs (UI-First Workflow)
+=======
+# 04 - Jobs Commands
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
 
 Jobs are now designed for **board + button + modal** usage.
 

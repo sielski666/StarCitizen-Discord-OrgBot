@@ -1,8 +1,19 @@
+<<<<<<< HEAD
 # 01 - Start Here (Beginner Guide)
+=======
+# 01 - Startup Information
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
 
 If this is your first time running the bot, do this page top-to-bottom.
 
+<<<<<<< HEAD
 ## What success looks like
+=======
+## Start here
+For hosted multi-server usage, server admins only need to:
+1. Run `/setup start`
+2. Run `/setup status`
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
 
 After setup, you should be able to:
 1. Run `/setup status` with no critical errors

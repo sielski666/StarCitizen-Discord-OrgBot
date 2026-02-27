@@ -1,4 +1,9 @@
 # 03 - Command Index
+<<<<<<< HEAD
+=======
+
+This page is the command map. Use the detailed pages for exact usage and behavior.
+>>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
 
 ## Setup
 - `/setup start` *(Admin only)*

@@ -1,4 +1,4 @@
-# 12 - Feedback & Known Issues
+# 11 - Feedback & Known Issues
 
 ## Feedback should target bot behavior
 Use this format:
