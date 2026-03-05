@@ -1,96 +1,200 @@
-<<<<<<< HEAD
-# 01 - Start Here (Beginner Guide)
-=======
-# 01 - Startup Information
->>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
+# 01 - Bot Features (Legacy-Free Reference)
 
-If this is your first time running the bot, do this page top-to-bottom.
+This document is the canonical feature map for the current bot.
 
-<<<<<<< HEAD
-## What success looks like
-=======
-## Start here
-For hosted multi-server usage, server admins only need to:
-1. Run `/setup start`
-2. Run `/setup status`
->>>>>>> a672f116b5385f07234b5109f7c5304b2f702b7c
-
-After setup, you should be able to:
-1. Run `/setup status` with no critical errors
-2. Post a job (`/jobs post`)
-3. Create + post an event template job (`/eventtemplate add` + `/eventjob post`)
-4. Confirm payout flow works (`/jobs confirm`)
+If a flow is not listed here, treat it as not supported or legacy.
 
 ---
 
-## Prerequisites
+## A) Platform + Core Architecture
 
-- Discord server where you are Admin
-- Discord bot token from Developer Portal
-- Python 3.10+
-- Terminal access on your host machine
+- Guild-aware configuration and role-gated operations
+- Multi-server support
+- Board-first UX (buttons + modals)
+- Ledger-backed finance/audit events
+- Treasury-aware payout settlement
 
 ---
 
-## Step-by-step setup
+## B) Setup + Server Operations
 
-### 1) Install and run the bot
+### Available setup commands
+- `/setup start` *(Admin)*
+- `/setup status` *(Admin)*
+- `/setup doctor` *(Admin)*
+- `/setup createchannels` *(Admin)*
+- `/setup addarea` *(Admin; modal flow)*
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-```
+### What setup supports
+- Initial server bootstrap
+- Validation/diagnostics of config + permissions
+- Recreate missing required channels
+- Add custom job area + auto-create mapped area channel
+- Keep default baseline areas on first setup; add extras later as needed
 
-Edit `.env` and set at least:
-- `DISCORD_TOKEN`
-- `GUILD_ID`
+---
 
-Start:
-```bash
-python bot.py
-```
+## C) Jobs (Non-Event) — Main Operational Flow
 
-### 2) Run Discord setup
+## Posting
+- **Only supported posting path:** `Jobs Board → Post Job`
+- Area → Tier → Modal creation flow
+- Job is routed to mapped area channel
 
-In your server:
-- `/setup start`
-- `/setup status`
+## Job lifecycle
+- Open → Claimed → Completed → Paid
+- Admin controls:
+  - `/jobs cancel`
+  - `/jobs reopen`
 
-`/setup start` will create required channels/roles and apply defaults.
+## Execution controls
+- Accept/claim via job card
+- Complete via job card
+- Confirm payout via finance/admin flow
 
-### 3) Validate core flow
+---
+
+## D) Crew Management (Non-Event)
+
+### UI controls
+- Crew button on job/thread control cards:
+  - Add Crew
+  - Remove Crew
+  - View Crew
+
+### Slash controls
+- `/jobs crew_add`
+- `/jobs crew_remove`
+- `/jobs crew_list`
+
+### Behavior
+- Mention-first crew input UX
+- Crew shown on job cards
+- Card refresh on crew changes
+
+---
+
+## E) Payout System
+
+### Payout modes
+- Flat Split
+- Weighted Split
+
+### Weighted Split capabilities
+- Role count selection: **4–8**
+- Editable role labels + weights
+- Non-negative weights (`>= 0`)
+- Assignment validation:
+  - only payout-group members
+  - no duplicates across roles
+  - every participant assigned exactly once
+
+### Weighted audit
+- Writes ledger snapshot:
+  - `job_weighted_snapshot`
+  - includes labels/weights/assignments
+
+### Treasury + shortfall support
+- Treasury-aware settlement path
+- If shortfall occurs: outstanding payout can be issued as bond
+
+---
+
+## F) Bonds
+
+- `/bond redeem`
+- FIFO redemption behavior
+- Treasury-safe redemption constraints
+
+---
+
+## G) Event Jobs
+
+### Event posting
+- `/eventjob post template:<name>`
+
+### Attendance (member)
+- `/jobs attend`
+- `/jobs unattend`
+- `/jobs attendees`
+
+### Attendance controls (finance/admin)
+- `/jobs attendance_sync`
+- `/jobs attendance_lock`
+- `/jobs attendance_unlock`
+
+### Manual attendee admin
+- `/eventjob attendee_add`
+- `/eventjob attendee_remove`
+- `/eventjob attendee_list`
+
+### Event payout model
+- Payout based on attendance snapshot/lock flow
+
+---
+
+## H) Event Templates
 
 - `/eventtemplate add`
-- `/eventjob post template:<name>`
-- RSVP via linked scheduled event
-- Complete + confirm job (`/jobs confirm`)
+- `/eventtemplate update`
+- `/eventtemplate clone`
+- `/eventtemplate list`
+- `/eventtemplate view`
+- `/eventtemplate disable`
+- `/eventtemplate enable`
+- `/eventtemplate delete`
 
-### 4) Validate non-event flow
+---
+
+## I) Finance + Treasury + Audit Commands
+
+### Finance
+- `/finance pending_cashouts`
+- `/finance recent_payouts`
+- `/finance cashout_lookup`
+- `/finance user_audit`
+- `/finance cashout_stats`
+- `/finance stock_stats`
+- `/finance reconcile`
+
+### Treasury
+- `/treasury status`
+- `/treasury set`
+
+---
+
+## J) Account + Role Sync
+
+- `/account overview`
+- `/account debugtiers`
+- `/account rolesync`
+
+---
+
+## K) Stocks
+
+- `/stock buy`
+- `/stock sell`
+- `/stock portfolio`
+- `/stock market`
+- `/stock price_nudge`
+- `/stock price_set`
+
+---
+
+## L) Reliability + Guardrail Improvements (Current)
+
+- Board-only posting model (legacy `/jobs post` removed)
+- Channel routing guardrails prevent silent wrong-channel posting
+- Legacy job lookup compatibility across restart scope differences
+- Weighted payout interaction flow hardened for Discord component/modal limits
+
+---
+
+## M) Legacy/Removed (Do Not Use)
 
 - `/jobs post`
-- Pick area and tier
-- Submit modal
-- Confirm it routes to the expected channel
+- Any docs/instructions saying “post jobs with `/jobs post`”
+- Any docs/instructions saying “use jobs-board Crew button”
 
----
-
-## Feature map (plain English)
-
-- **Setup**: provisions channels/roles/config sanity checks
-- **Jobs**: creates and tracks org work from posted to paid
-- **Event Jobs**: ties job attendance to Discord event RSVP
-- **Finance**: cashout/payout audit and reconciliation tools
-- **Treasury**: current treasury state + admin adjustment
-- **Account**: per-user overview and progression
-- **Stocks**: buy/sell market layer and admin controls
-
----
-
-## Where to go next
-
-- Setup commands: `02-setup-commands.md`
-- Command index: `03-command-index.md`
-- Troubleshooting: `10-troubleshooting.md`
-- FAQ: `16-faq.md`
+This feature map replaces those legacy instructions.
